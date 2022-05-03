@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from gi_tract import UNet
+from models.unet import UNet
 
 
 @pytest.mark.parametrize("filters", [[32] * i for i in range(1, 6)])

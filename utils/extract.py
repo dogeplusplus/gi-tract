@@ -31,6 +31,27 @@ def parse_segmentation(
     return mask
 
 
+def running_length(arr: np.ndarray) -> str:
+    runs = []
+    length = 0
+    start = 0
+
+    for i in range(len(arr)):
+        if arr[i] == 0 and length > 0:
+            runs += [str(start), str(length)]
+            length = 0
+            start = -1
+        elif arr[i] == 1:
+            if length == 0:
+                start = i
+            length += 1
+
+    if length > 0:
+        runs += [str(start), str(length)]
+
+    return " ".join(runs)
+
+
 def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
     mask = np.zeros(image_size, dtype=np.int8)
 

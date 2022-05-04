@@ -7,7 +7,6 @@ from pathlib import Path
 
 
 CLASS_MAPPING = {
-    "background": 0,
     "large_bowel": 1,
     "small_bowel": 2,
     "stomach": 3,
@@ -50,6 +49,25 @@ def running_length(arr: np.ndarray) -> str:
         runs += [str(start), str(length)]
 
     return " ".join(runs)
+
+
+def convert_to_rle(mask: np.ndarray, id: int) -> pd.DataFrame:
+    rows = []
+
+    for name, value in CLASS_MAPPING.items():
+        submask = np.where(mask == value, 1, 0)
+        # ordered from top to bottom, left to right
+        flat_mask = submask.flatten(order="F")
+        predicted = running_length(flat_mask)
+        entry = {
+            "id": id,
+            "class": name,
+            "predicted": predicted or None,
+        }
+        rows.append(entry)
+
+    df = pd.DataFrame(rows)
+    return df
 
 
 def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:

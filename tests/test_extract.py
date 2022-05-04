@@ -45,3 +45,36 @@ def test_convert_to_rle():
     rle = df.to_dict("records")
     for x, y in zip(expected, rle):
         assert x == y
+
+
+def test_convert_to_rle_missing_mask():
+    mask = np.array([
+        [0, 0, 0, 1, 1],
+        [0, 0, 2, 1, 1],
+        [0, 0, 2, 0, 0],
+        [0, 0, 2, 0, 0],
+    ])
+
+    index = 1
+    expected = [
+        {
+            "id": index,
+            "class": "large_bowel",
+            "predicted": "12 2 16 2",
+        },
+        {
+            "id": index,
+            "class": "small_bowel",
+            "predicted": "9 3",
+        },
+        {
+            "id": index,
+            "class": "stomach",
+            "predicted": None,
+        }
+    ]
+
+    df = convert_to_rle(mask, index)
+    rle = df.to_dict("records")
+    for x, y in zip(expected, rle):
+        assert x == y

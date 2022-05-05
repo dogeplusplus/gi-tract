@@ -1,5 +1,6 @@
 import os
 import cv2
+import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -39,6 +40,21 @@ def pixel_distributions(dataset_dir: Path):
     plt.show()
 
 
+def display_image_mask(image_path: Path, mask_path: Path):
+    fig, ax = plt.subplots(1, 2)
+
+    image = cv2.imread(str(image_path), cv2.IMREAD_ANYDEPTH)
+    mask = cv2.imread(str(mask_path), cv2.IMREAD_ANYDEPTH)
+
+    plt.title(image_path)
+    ax[0].imshow(image, cmap="gray")
+    ax[1].matshow(mask, cmap="gray")
+
+    plt.show()
+
+
 if __name__ == "__main__":
-    path = Path("dataset") / "images"
-    pixel_distributions(path)
+    image_list = list(Path("dataset/images").rglob("**/*.png"))
+    image_path = random.choice(image_list)
+    mask_path = Path(str(image_path).replace("images", "labels"))
+    display_image_mask(image_path, mask_path)

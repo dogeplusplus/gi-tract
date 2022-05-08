@@ -80,7 +80,8 @@ def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
         # Avoid cases where the RLE mask overlap
         mask = np.maximum(mask, segment_mask)
 
-    return mask
+    onehot_mask = np.stack([np.asarray(mask == i, dtype=np.int8) for i in range(1, 4)], axis=-1)
+    return onehot_mask
 
 
 def preprocess_dataset(df: pd.DataFrame, input_dir: Path, dataset_dir: Path):

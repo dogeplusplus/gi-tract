@@ -25,8 +25,8 @@ class GITract(Dataset):
         img_path = self.images[idx]
         label_path = self.labels[idx]
 
-        img = cv2.imread(str(img_path), cv2.IMREAD_ANYDEPTH)
-        label = cv2.imread(str(label_path), cv2.IMREAD_ANYDEPTH)
+        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+        label = cv2.imread(str(label_path), cv2.IMREAD_UNCHANGED)
 
         img = np.asarray(img, dtype=np.float32)
         label = np.asarray(label, dtype=np.uint8)
@@ -36,12 +36,15 @@ class GITract(Dataset):
 
 def collate_fn(batch, image_size=320):
     resize_layer = transforms.Resize((image_size, image_size))
-    def resize(x): return resize_layer(rearrange(x, "h w -> 1 h w"))
+
+    def resize(x):
+        x = resize_layer(x)
+        x = rearrange(x, "c h w -> 1 c h w")
+        return x
 
     images, labels = zip(*batch)
-    images = [resize(x) for x in images]
-    labels = [resize(y) for y in labels]
-
+    images = [resize(rearrange(x, "h w -> 1 h w")) for x in images]
+    labels = [resize(rearrange(y, "h w c -> c h w")) for y in labels]
     return torch.cat(images), torch.cat(labels)
 
 

@@ -29,15 +29,15 @@ def main():
     in_dim = 1
     out_dim = 3
     kernel_size = (3, 3)
-
-    model = UNet(filters, in_dim, out_dim, kernel_size)
-
     epochs = 100
     lr = 1e-3
     weight_decay = 1e-2
-    optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = UNet(filters, in_dim, out_dim, kernel_size)
+    model.to(device)
+    optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
 
     loss_fn = DiceLoss()
 
@@ -52,22 +52,21 @@ def main():
             "hausdorff": 0,
         }
         n = 0
-        train_bar = tqdm.tqdm(train_ds, total=len(train_ds), desc=desc)
+        train_bar = tqdm.tqdm(train_ds, total=len(train_ds), desc=desc.format(e))
 
         for x, y in train_bar:
             n += 1
             optimizer.zero_grad()
             x = x.to(device)
             y = y.to(device)
-
             pred = model(x)
             loss = loss_fn(pred, y)
             loss.backward()
             optimizer.step()
 
             loss = loss.detach().numpy()
-            hausdorff = compute_hausdorff_distance(pred, y)
-            dice = compute_meandice(pred, y)
+            hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean().detach().numpy()
+            dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach().numpy()
             train_metrics["loss"] = (train_metrics["loss"] * (n - 1) + loss) / n
             train_metrics["hausdorff"] = (train_metrics["hausdorff"] * (n - 1) + hausdorff) / n
             train_metrics["dice"] = (train_metrics["dice"] * (n - 1) + dice) / n
@@ -80,7 +79,7 @@ def main():
             "dice": 0,
             "hausdorff": 0,
         }
-        val_bar = tqdm.tqdm(val_ds, total=len(val_ds), desc=val_desc)
+        val_bar = tqdm.tqdm(val_ds, total=len(val_ds), desc=val_desc.format(e))
         n = 0
 
         with torch.no_grad():

@@ -2,13 +2,13 @@ import tqdm
 import torch
 import torchmetrics
 
+from pathlib import Path
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast, GradScaler
 from monai.losses import DiceLoss
 from monai.metrics import compute_hausdorff_distance, compute_meandice
 
-from pathlib import Path
-from torch.utils.data import DataLoader
-
-from torch.optim import AdamW
 from models.unet import UNet
 from utils.dataset import GITract, collate_fn, split_train_test_cases
 
@@ -19,7 +19,6 @@ def main():
     val_ratio = 0.2
     batch_size = 128
     num_workers = 4
-    # prefetch_factor = 4
 
     train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
 
@@ -34,7 +33,6 @@ def main():
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=num_workers,
-        # prefetch_factor=prefetch_factor,
         pin_memory=device == "cuda",
     )
     val_ds = DataLoader(
@@ -43,7 +41,6 @@ def main():
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=num_workers,
-        # prefetch_factor=prefetch_factor,
         pin_memory=device == "cuda",
     )
 
@@ -59,7 +56,7 @@ def main():
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
-
+    scaler = GradScaler()
     loss_fn = DiceLoss()
 
     desc = "Train Epoch: {}"
@@ -83,10 +80,13 @@ def main():
             optimizer.zero_grad()
             x = x.to(device)
             y = y.to(device)
-            pred = model(x)
-            loss = loss_fn(pred, y)
-            loss.backward()
-            optimizer.step()
+            with autocast():
+                pred = model(x)
+                loss = loss_fn(pred, y)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             loss = loss.detach()
             hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean().detach()

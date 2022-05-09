@@ -37,6 +37,7 @@ def main():
 
     model = UNet(filters, in_dim, out_dim, kernel_size)
     model.to(device)
+
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
 
     loss_fn = DiceLoss()
@@ -64,9 +65,9 @@ def main():
             loss.backward()
             optimizer.step()
 
-            loss = loss.detach().numpy()
-            hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean().detach().numpy()
-            dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach().numpy()
+            loss = loss.cpu().detach().numpy()
+            hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean().cpu().detach().numpy()
+            dice = torch.nan_to_num(compute_meandice(pred, y)).mean().cpu().detach().numpy()
             train_metrics["loss"] = (train_metrics["loss"] * (n - 1) + loss) / n
             train_metrics["hausdorff"] = (train_metrics["hausdorff"] * (n - 1) + hausdorff) / n
             train_metrics["dice"] = (train_metrics["dice"] * (n - 1) + dice) / n
@@ -91,9 +92,9 @@ def main():
                 pred = model(x)
                 loss = loss_fn(pred, y)
 
-                loss = loss.detach().numpy()
-                hausdorff = compute_hausdorff_distance(pred, y)
-                dice = compute_meandice(pred, y)
+                loss = loss.cpu().detach().numpy()
+                hausdorff = compute_hausdorff_distance(pred, y).mean().cpu().detach().numpy()
+                dice = compute_meandice(pred, y).mean().cpu().detach().numpy()
                 val_metrics["loss"] = (val_metrics["loss"] * (n - 1) + loss) / n
                 val_metrics["hausdorff"] = (val_metrics["hausdorff"] * (n - 1) + hausdorff) / n
                 val_metrics["dice"] = (val_metrics["dice"] * (n - 1) + dice) / n

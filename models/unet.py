@@ -5,9 +5,14 @@ import torch.nn.functional as F
 
 
 class DoubleConv(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, kernel_size: t.Tuple[int, int] = (7, 7)):
-        super().__init__()
-        self.norm = nn.InstanceNorm2d(in_dim)
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        kernel_size: t.Tuple[int, int] = (7, 7),
+    ):
+        super(DoubleConv, self).__init__()
+        self.norm = nn.BatchNorm2d(in_dim)
         self.conv1 = nn.Conv2d(in_dim, out_dim, kernel_size, padding="same")
         self.act1 = nn.GELU()
         self.conv2 = nn.Conv2d(out_dim, out_dim, kernel_size, padding="same")
@@ -29,9 +34,10 @@ class UNet(nn.Module):
         filters: t.List[int],
         in_dim: int,
         out_dim: int,
-        kernel_size: t.Tuple[int, int]
+        kernel_size: t.Tuple[int, int],
     ):
-        super().__init__()
+        super(UNet, self).__init__()
+
         # Split filters into respective segments
         bottom_filters = filters[-1]
         down_filters = [in_dim] + filters
@@ -41,14 +47,14 @@ class UNet(nn.Module):
 
         down_pairs = zip(down_filters[:-1], down_filters[1:])
         up_pairs = zip(up_filters[:-1], up_filters[1:])
-        self.down = [
+        self.down = nn.ModuleList([
             DoubleConv(cin, cout, kernel_size) for (cin, cout) in down_pairs
-        ]
+        ])
 
         # Double the in channels due to concatenation
-        self.up = [
+        self.up = nn.ModuleList([
             DoubleConv(2 * cin, cout, kernel_size) for (cin, cout) in up_pairs
-        ]
+        ])
         self.bottom = DoubleConv(down_filters[-1], bottom_filters, kernel_size)
 
         self.final = nn.Conv2d(out_dim, out_dim, kernel_size=(1, 1))

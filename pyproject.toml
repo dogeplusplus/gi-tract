@@ -17,6 +17,7 @@ scipy = "^1.8.0"
 monai = "^0.8.1"
 torchmetrics = "^0.8.2"
 einops = "^0.4.1"
+mlflow = "^1.25.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"

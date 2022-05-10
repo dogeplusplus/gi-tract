@@ -1,5 +1,7 @@
 import tqdm
 import torch
+import mlflow
+import numpy as np
 import torchmetrics
 
 from pathlib import Path
@@ -61,8 +63,9 @@ def main():
 
     desc = "Train Epoch: {}"
     val_desc = "Valid Epoch: {}"
-    save_every = 5
     display_every = 50
+
+    best_loss = -np.inf
 
     for e in range(epochs):
         train_metrics = {
@@ -72,11 +75,9 @@ def main():
         }
         for metric in train_metrics.values():
             metric.to(device)
-        n = 0
         train_bar = tqdm.tqdm(train_ds, total=len(train_ds), desc=desc.format(e))
 
-        for x, y in train_bar:
-            n += 1
+        for i, (x, y) in enumerate(train_bar):
             optimizer.zero_grad()
             x = x.to(device)
             y = y.to(device)
@@ -95,9 +96,14 @@ def main():
             train_metrics["hausdorff"].update(hausdorff)
             train_metrics["dice"].update(dice)
 
-            if n % display_every == 0:
+            if i % display_every == 0:
                 display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in train_metrics.items()}
                 train_bar.set_postfix(**display_metrics)
+
+        mlflow.log_metrics({
+            f"train_{k}": float(v.compute().cpu().numpy()) for k,
+            v in train_metrics.items()
+        }, step=e)
 
         val_metrics = {
             "loss": torchmetrics.MeanMetric(),
@@ -108,11 +114,9 @@ def main():
             metric.to(device)
 
         val_bar = tqdm.tqdm(val_ds, total=len(val_ds), desc=val_desc.format(e))
-        n = 0
 
         with torch.no_grad():
-            for x, y in val_bar:
-                n += 1
+            for i, (x, y) in enumerate(val_bar):
                 x = x.to(device)
                 y = y.to(device)
 
@@ -121,16 +125,23 @@ def main():
                 hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean()
                 dice = torch.nan_to_num(compute_meandice(pred, y)).mean()
 
-                val_metrics["loss"] = (val_metrics["loss"] * (n - 1) + loss) / n
-                val_metrics["hausdorff"] = (val_metrics["hausdorff"] * (n - 1) + hausdorff) / n
-                val_metrics["dice"] = (val_metrics["dice"] * (n - 1) + dice) / n
+                val_metrics["loss"].update(loss)
+                val_metrics["hausdorff"].update(hausdorff)
+                val_metrics["dice"].update(dice)
 
-                if n % display_every == 0:
+                if i % display_every == 0:
                     display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in val_metrics.items()}
                     val_bar.set_postfix(**display_metrics)
 
-        if e % save_every == 0:
-            torch.save(model.state_dict(), f"model_{e}.pth")
+        mlflow.log_metrics({
+            f"val_{k}": float(v.compute().cpu().numpy()) for k,
+            v in val_metrics.items()
+        }, step=e)
+
+        val_loss = val_metrics["loss"].compute().cpu().numpy()
+        if val_loss < best_loss:
+            best_loss = val_loss
+            mlflow.pytorch.log_model(model, "stomech")
 
 
 if __name__ == "__main__":

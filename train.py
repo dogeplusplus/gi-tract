@@ -19,7 +19,7 @@ def main():
     dataset_dir = Path("dataset")
 
     val_ratio = 0.2
-    batch_size = 128
+    batch_size = 256
     num_workers = 4
 
     train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
@@ -90,7 +90,7 @@ def main():
             scaler.update()
 
             loss = loss.detach()
-            hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean().detach()
+            hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y, include_background=True)).mean().detach()
             dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach()
             train_metrics["loss"].update(loss)
             train_metrics["hausdorff"].update(hausdorff)
@@ -122,7 +122,7 @@ def main():
 
                 pred = model(x)
                 loss = loss_fn(pred, y)
-                hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y)).mean()
+                hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y, include_background=True)).mean()
                 dice = torch.nan_to_num(compute_meandice(pred, y)).mean()
 
                 val_metrics["loss"].update(loss)

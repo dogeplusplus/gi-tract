@@ -50,7 +50,7 @@ def main():
     in_dim = 1
     out_dim = 3
     kernel_size = (3, 3)
-    epochs = 100
+    epochs = 200
     lr = 1e-3
     weight_decay = 1e-2
 
@@ -65,7 +65,7 @@ def main():
     val_desc = "Valid Epoch: {}"
     display_every = 50
 
-    best_loss = -np.inf
+    best_loss = np.inf
 
     for e in range(epochs):
         train_metrics = {
@@ -141,7 +141,7 @@ def main():
         val_loss = val_metrics["loss"].compute().cpu().numpy()
         if val_loss < best_loss:
             best_loss = val_loss
-            mlflow.pytorch.log_model(model, "stomech")
+            mlflow.pytorch.log_model(model, "model")
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ def visualise_random_images(images_path: Path, num_images: int):
     ]
     cols = 4
     rows = num_images // cols
-    fig = make_subplots(rows, cols)
+    fig = make_subplots(rows, cols, horizontal_spacing=0.05)
     fig.update_layout(title_text="Image Examples")
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)

@@ -1,4 +1,3 @@
-import cv2
 import torch
 import numpy as np
 import typing as t
@@ -12,11 +11,12 @@ from torch.utils.data import Dataset, random_split
 
 
 class GITract(Dataset):
-    def __init__(self, images: t.List[Path], labels: t.List[Path]):
+    def __init__(self, images: t.List[Path], labels: t.List[Path], transforms=None):
         assert len(images) == len(
             labels), f"Images and Labels unequal length, Images: {len(images)}, Labels: {len(labels)}"
         self.images = images
         self.labels = labels
+        self.transforms = transforms
 
     def __len__(self):
         return min(len(self.images), len(self.labels))
@@ -25,13 +25,20 @@ class GITract(Dataset):
         img_path = self.images[idx]
         label_path = self.labels[idx]
 
-        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-        label = cv2.imread(str(label_path), cv2.IMREAD_UNCHANGED)
+        img = np.load(img_path)
+        label = np.load(label_path)
 
         img = np.asarray(img, dtype=np.float32)
-        label = np.asarray(label, dtype=np.uint8)
+        label = np.asarray(label, dtype=np.float32)
 
-        return torch.from_numpy(img), torch.from_numpy(label)
+        img = torch.from_numpy(img)
+        label = torch.from_numpy(label)
+
+        if self.transforms:
+            img = self.transforms(rearrange(img, "h w -> 1 h w 1"))
+            img = rearrange(img, "1 h w 1 -> h w")
+
+        return img, label
 
 
 def collate_fn(batch, image_size=320):
@@ -66,10 +73,10 @@ def split_train_test_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPat
     train_cases = cases[train_idx]
     val_cases = cases[val_idx]
 
-    train_images = list(chain.from_iterable((image_dir / case).rglob("**/*.png") for case in train_cases))
-    val_images = list(chain.from_iterable((image_dir / case).rglob("**/*.png") for case in val_cases))
+    train_images = list(chain.from_iterable((image_dir / case).rglob("**/*.npy") for case in train_cases))
+    val_images = list(chain.from_iterable((image_dir / case).rglob("**/*.npy") for case in val_cases))
 
-    train_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.png") for case in train_cases))
-    val_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.png") for case in val_cases))
+    train_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.npy") for case in train_cases))
+    val_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.npy") for case in val_cases))
 
     return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)

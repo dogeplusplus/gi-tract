@@ -1,5 +1,4 @@
 import cv2
-import shutil
 import numpy as np
 import pandas as pd
 
@@ -7,6 +6,7 @@ from pathlib import Path
 
 
 CLASS_MAPPING = {
+    "background": 0,
     "large_bowel": 1,
     "small_bowel": 2,
     "stomach": 3,
@@ -27,6 +27,7 @@ def parse_segmentation(
         flat_mask[start:start+length] = CLASS_MAPPING[label]
 
     mask = np.reshape(flat_mask, image_size)
+
     return mask
 
 
@@ -55,6 +56,9 @@ def convert_to_rle(mask: np.ndarray, id: int) -> pd.DataFrame:
     rows = []
 
     for name, value in CLASS_MAPPING.items():
+        # Skip background
+        if value == 0:
+            continue
         submask = np.where(mask == value, 1, 0)
         # ordered from top to bottom, left to right
         flat_mask = submask.flatten(order="F")
@@ -80,7 +84,7 @@ def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
         # Avoid cases where the RLE mask overlap
         mask = np.maximum(mask, segment_mask)
 
-    onehot_mask = np.stack([np.asarray(mask == i, dtype=np.int8) for i in range(1, 4)], axis=-1)
+    onehot_mask = np.stack([np.asarray(mask == i, dtype=np.int8) for i in range(4)], axis=-1)
     return onehot_mask
 
 
@@ -110,7 +114,21 @@ def preprocess_dataset(df: pd.DataFrame, input_dir: Path, dataset_dir: Path):
                 slice_id = f"{case}_slice_{slice_num}"
                 rows = df.loc[df["id"] == slice_id]
                 mask = generate_mask(rows, (width, height))
-                image_path = case_image_dir / f"{slice_id}.png"
-                label_path = case_label_dir / f"{slice_id}.png"
-                shutil.copy(scan, image_path)
-                cv2.imwrite(str(label_path), mask)
+                image_path = case_image_dir / f"{slice_id}.npy"
+                label_path = case_label_dir / f"{slice_id}.npy"
+
+                image = cv2.imread(str(scan), cv2.IMREAD_UNCHANGED)
+                np.save(str(image_path), image)
+                np.save(str(label_path), mask)
+
+
+def main():
+    input_dir = Path("raw_dataset")
+    dataset_dir = Path("dataset")
+    df = pd.read_csv("train.csv")
+
+    preprocess_dataset(df, input_dir, dataset_dir)
+
+
+if __name__ == "__main__":
+    main()

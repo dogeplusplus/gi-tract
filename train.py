@@ -65,12 +65,14 @@ def main():
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
     scaler = GradScaler()
 
-    loss_type = "mse"
+    loss_type = "cross_entropy"
 
     if loss_type == "mse":
         loss_fn = torch.nn.MSELoss()
     elif loss_type == "dice":
         loss_fn = DiceLoss()
+    elif loss_type == "cross_entropy":
+        loss_fn = torch.nn.CrossEntropyLoss()
     else:
         raise ValueError(f"Loss {loss_type} not supported.")
 

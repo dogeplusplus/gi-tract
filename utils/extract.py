@@ -52,7 +52,7 @@ def running_length(arr: np.ndarray) -> str:
     return " ".join(runs)
 
 
-def convert_to_rle(mask: np.ndarray, id: int) -> pd.DataFrame:
+def convert_to_rle(mask: np.ndarray, id: str) -> pd.DataFrame:
     rows = []
 
     for name, value in CLASS_MAPPING.items():

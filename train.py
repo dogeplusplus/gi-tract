@@ -3,13 +3,14 @@ import torch
 import mlflow
 import numpy as np
 import torchmetrics
+import torch.nn as nn
 
 from pathlib import Path
 from torch.optim import AdamW
+from monai.losses import DiceLoss
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
-from monai.losses import DiceLoss
 from monai.metrics import compute_meandice
 
 from models.unet import UNet
@@ -25,7 +26,7 @@ def main():
 
     train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
 
-    preprocessing = torch.nn.Sequential(
+    preprocessing = nn.Sequential(
         transforms.Normalize((0.456), (0.225)),
     )
 
@@ -58,8 +59,9 @@ def main():
     epochs = 100
     lr = 1e-3
     weight_decay = 1e-2
+    activation = nn.LeakyReLU
 
-    model = UNet(filters, in_dim, out_dim, kernel_size)
+    model = UNet(filters, in_dim, out_dim, kernel_size, activation)
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
@@ -68,11 +70,11 @@ def main():
     loss_type = "cross_entropy"
 
     if loss_type == "mse":
-        loss_fn = torch.nn.MSELoss()
+        loss_fn = nn.MSELoss()
     elif loss_type == "dice":
         loss_fn = DiceLoss()
     elif loss_type == "cross_entropy":
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss_fn = nn.CrossEntropyLoss()
     else:
         raise ValueError(f"Loss {loss_type} not supported.")
 

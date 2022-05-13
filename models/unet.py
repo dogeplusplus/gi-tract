@@ -3,6 +3,8 @@ import typing as t
 import torch.nn as nn
 import torch.nn.functional as F
 
+from torch.nn.modules import Module
+
 
 class DoubleConv(nn.Module):
     def __init__(
@@ -10,13 +12,14 @@ class DoubleConv(nn.Module):
         in_dim: int,
         out_dim: int,
         kernel_size: t.Tuple[int, int] = (7, 7),
+        activation: Module = nn.GELU,
     ):
         super(DoubleConv, self).__init__()
         self.norm = nn.BatchNorm2d(in_dim)
         self.conv1 = nn.Conv2d(in_dim, out_dim, kernel_size, padding="same")
-        self.act1 = nn.GELU()
+        self.act1 = activation()
         self.conv2 = nn.Conv2d(out_dim, out_dim, kernel_size, padding="same")
-        self.act2 = nn.GELU()
+        self.act2 = activation()
 
     def forward(self, x):
         x = self.norm(x)
@@ -35,6 +38,7 @@ class UNet(nn.Module):
         in_dim: int,
         out_dim: int,
         kernel_size: t.Tuple[int, int],
+        activation: nn.Module = nn.GELU,
     ):
         super(UNet, self).__init__()
 
@@ -48,14 +52,14 @@ class UNet(nn.Module):
         down_pairs = zip(down_filters[:-1], down_filters[1:])
         up_pairs = zip(up_filters[:-1], up_filters[1:])
         self.down = nn.ModuleList([
-            DoubleConv(cin, cout, kernel_size) for (cin, cout) in down_pairs
+            DoubleConv(cin, cout, kernel_size, activation) for (cin, cout) in down_pairs
         ])
 
         # Double the in channels due to concatenation
         self.up = nn.ModuleList([
-            DoubleConv(2 * cin, cout, kernel_size) for (cin, cout) in up_pairs
+            DoubleConv(2 * cin, cout, kernel_size, activation) for (cin, cout) in up_pairs
         ])
-        self.bottom = DoubleConv(down_filters[-1], bottom_filters, kernel_size)
+        self.bottom = DoubleConv(down_filters[-1], bottom_filters, kernel_size, activation)
 
         self.final = nn.Conv2d(out_dim, out_dim, kernel_size=(1, 1))
         self.softmax = nn.Softmax(dim=1)

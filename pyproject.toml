@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "python-template"
+name = "gi-tract"
 version = "0.1.0"
-description = "Python template repository"
+description = "Kaggle GI Tract Segmentation"
 authors = ["dogeplusplus <albertswchung@gmail.com>"]
 
 [tool.poetry.dependencies]
@@ -20,6 +20,7 @@ einops = "^0.4.1"
 mlflow = "^1.25.1"
 plotly = "^5.8.0"
 jupyter = "^1.0.0"
+torchviz = "^0.0.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"

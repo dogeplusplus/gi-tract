@@ -1,3 +1,4 @@
+import sys
 import torch
 import random
 import mlflow
@@ -8,6 +9,8 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from einops import rearrange
 from torchvision import transforms
+
+sys.path.append(".")
 
 
 def predict(model: nn.Module, image: torch.Tensor) -> torch.Tensor:

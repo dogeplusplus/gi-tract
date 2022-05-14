@@ -23,12 +23,14 @@ def main():
 
     val_ratio = 0.2
     batch_size = 64
-    num_workers = 0
+    num_workers = 8
+    prefetch_factor = 8
     image_size = (320, 320)
 
     train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
 
     transforms = A.Compose([
+        A.Normalize((0.5), (0.5)),
         A.Resize(*image_size, interpolation=cv2.INTER_NEAREST),
         A.HorizontalFlip(p=0.5),
         A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
@@ -54,6 +56,7 @@ def main():
         shuffle=True,
         num_workers=num_workers,
         pin_memory=device == "cuda",
+        prefetch_factor=prefetch_factor,
     )
     val_ds = DataLoader(
         val_ds,
@@ -61,6 +64,7 @@ def main():
         shuffle=True,
         num_workers=num_workers,
         pin_memory=device == "cuda",
+        prefetch_factor=prefetch_factor,
     )
 
     epochs = 100

@@ -153,6 +153,8 @@ def main():
 
         with torch.no_grad():
             for i, (x, y) in enumerate(val_bar):
+                x = rearrange(x, "b h w c -> b c h w")
+                y = rearrange(y, "b h w c -> b c h w")
                 x = x.to(device)
                 y = y.to(device)
 

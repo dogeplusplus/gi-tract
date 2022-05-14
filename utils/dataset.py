@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 import typing as t
 
@@ -6,7 +5,6 @@ from pathlib import Path
 from itertools import chain
 from einops import rearrange
 from dataclasses import dataclass
-from torchvision import transforms
 from torch.utils.data import Dataset, random_split
 
 
@@ -31,28 +29,12 @@ class GITract(Dataset):
         img = np.asarray(img, dtype=np.float32)
         label = np.asarray(label, dtype=np.float32)
 
-        img = torch.from_numpy(img)
-        label = torch.from_numpy(label)
-
         if self.transforms:
-            img = self.transforms(rearrange(img, "h w -> 1 h w 1"))
-            img = rearrange(img, "1 h w 1 -> h w")
+            data = self.transforms(image=rearrange(img, "h w -> h w 1"), mask=label)
+            img = data["image"]
+            label = data["mask"]
 
         return img, label
-
-
-def collate_fn(batch, image_size=320):
-    resize_layer = transforms.Resize((image_size, image_size))
-
-    def resize(x):
-        x = resize_layer(x)
-        x = rearrange(x, "c h w -> 1 c h w")
-        return x
-
-    images, labels = zip(*batch)
-    images = [resize(rearrange(x, "h w -> 1 h w")) for x in images]
-    labels = [resize(rearrange(y, "h w c -> c h w")) for y in labels]
-    return torch.cat(images), torch.cat(labels)
 
 
 @dataclass

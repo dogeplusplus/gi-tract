@@ -39,6 +39,7 @@ class UNet(nn.Module):
         out_dim: int,
         kernel_size: t.Tuple[int, int],
         activation: nn.Module = nn.GELU,
+        final_activation: nn.Module = nn.Softmax(dim=1),
     ):
         super(UNet, self).__init__()
 
@@ -62,7 +63,7 @@ class UNet(nn.Module):
         self.bottom = DoubleConv(down_filters[-1], bottom_filters, kernel_size, activation)
 
         self.final = nn.Conv2d(out_dim, out_dim, kernel_size=(1, 1))
-        self.softmax = nn.Softmax(dim=1)
+        self.final_activation = final_activation
 
     def forward(self, x):
         down_stack = []
@@ -79,6 +80,6 @@ class UNet(nn.Module):
             x = layer(x)
 
         x = self.final(x)
-        x = self.softmax(x)
+        x = self.final_activation(x)
 
         return x

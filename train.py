@@ -1,37 +1,50 @@
+import cv2
 import tqdm
 import torch
 import mlflow
 import numpy as np
 import torchmetrics
-import torch.nn as nn
+import albumentations as A
+import segmentation_models_pytorch as smp
 
 from pathlib import Path
+from einops import rearrange
 from torch.optim import AdamW
-from monai.losses import DiceLoss
-from torchvision import transforms
 from torch.utils.data import DataLoader
-from torch.cuda.amp import autocast, GradScaler
 from monai.metrics import compute_meandice
+from torch.cuda.amp import autocast, GradScaler
 
-from models.unet import UNet
-from utils.dataset import GITract, collate_fn, split_train_test_cases
+# from models.unet import UNet
+from utils.dataset import GITract, split_train_test_cases
 
 
 def main():
     dataset_dir = Path("dataset")
 
     val_ratio = 0.2
-    batch_size = 256
+    batch_size = 64
     num_workers = 0
+    image_size = (320, 320)
 
     train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
 
-    preprocessing = nn.Sequential(
-        transforms.Normalize((0.456), (0.225)),
-    )
+    transforms = A.Compose([
+        A.Resize(*image_size, interpolation=cv2.INTER_NEAREST),
+        A.HorizontalFlip(p=0.5),
+        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
+        A.OneOf([
+            A.GridDistortion(num_steps=5, distort_limit=0.05, p=1.0),
+            A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0),
+        ], p=0.25),
+        A.CoarseDropout(
+            max_holes=8,
+            max_height=image_size[0] // 20,
+            max_width=image_size[1] // 20,
+        ),
+    ], p=1.0)
 
-    train_ds = GITract(train_set.images, train_set.labels, preprocessing)
-    val_ds = GITract(val_set.images, val_set.labels, preprocessing)
+    train_ds = GITract(train_set.images, train_set.labels, transforms)
+    val_ds = GITract(val_set.images, val_set.labels, transforms)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -39,7 +52,6 @@ def main():
         train_ds,
         batch_size,
         shuffle=True,
-        collate_fn=collate_fn,
         num_workers=num_workers,
         pin_memory=device == "cuda",
     )
@@ -47,38 +59,44 @@ def main():
         val_ds,
         batch_size,
         shuffle=True,
-        collate_fn=collate_fn,
         num_workers=num_workers,
         pin_memory=device == "cuda",
     )
 
-    filters = [16, 32, 64, 64]
-    in_dim = 1
-    out_dim = 4
-    kernel_size = (3, 3)
     epochs = 100
     lr = 1e-3
     weight_decay = 1e-2
-    activation = nn.LeakyReLU
 
-    model = UNet(filters, in_dim, out_dim, kernel_size, activation)
+    in_dim = 1
+    out_dim = 4
+
+    # filters = [16, 32, 64, 64]
+    # kernel_size = (3, 3)
+    # activation = nn.LeakyReLU
+    # final_activation = nn.Sigmoid()
+
+    # model = UNet(filters, in_dim, out_dim, kernel_size, activation, final_activation)
+    model = smp.Unet(
+        encoder_name="efficientnet-b1",
+        encoder_weights="imagenet",
+        in_channels=in_dim,
+        classes=out_dim,
+    )
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
     scaler = GradScaler()
 
-    loss_type = "cross_entropy"
+    losses = dict(
+        bce_loss=smp.losses.SoftBCEWithLogitsLoss(),
+        dice_loss=smp.losses.DiceLoss(mode="multilabel"),
+        tve_loss=smp.losses.TverskyLoss(mode="multilabel", log_loss=False)
+    )
 
-    if loss_type == "mse":
-        loss_fn = nn.MSELoss()
-    elif loss_type == "dice":
-        loss_fn = DiceLoss()
-    elif loss_type == "cross_entropy":
-        loss_fn = nn.CrossEntropyLoss()
-    else:
-        raise ValueError(f"Loss {loss_type} not supported.")
+    loss_name = "bce_loss"
+    loss_fn = losses[loss_name]
 
-    mlflow.log_param("loss_type", loss_type)
+    mlflow.log_param("loss_type", loss_name)
     desc = "Train Epoch: {}"
     val_desc = "Valid Epoch: {}"
     display_every = 50
@@ -97,6 +115,8 @@ def main():
 
         for i, (x, y) in enumerate(train_bar):
             optimizer.zero_grad()
+            x = rearrange(x, "b h w c -> b c h w")
+            y = rearrange(y, "b h w c -> b c h w")
             x = x.to(device)
             y = y.to(device)
             with autocast():
@@ -108,10 +128,8 @@ def main():
             scaler.update()
 
             loss = loss.detach()
-            # hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y, include_background=True)).mean().detach()
             dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach()
             train_metrics["loss"].update(loss)
-            # train_metrics["hausdorff"].update(hausdorff)
             train_metrics["dice"].update(dice)
 
             if i % display_every == 0:
@@ -140,11 +158,9 @@ def main():
 
                 pred = model(x)
                 loss = loss_fn(pred, y)
-                # hausdorff = torch.nan_to_num(compute_hausdorff_distance(pred, y, include_background=True)).mean()
                 dice = torch.nan_to_num(compute_meandice(pred, y)).mean()
 
                 val_metrics["loss"].update(loss)
-                # val_metrics["hausdorff"].update(hausdorff)
                 val_metrics["dice"].update(dice)
 
                 if i % display_every == 0:

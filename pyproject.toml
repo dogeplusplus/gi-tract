@@ -21,6 +21,8 @@ mlflow = "^1.25.1"
 plotly = "^5.8.0"
 jupyter = "^1.0.0"
 torchviz = "^0.0.2"
+segmentation-models-pytorch = "^0.2.1"
+albumentations = "^1.1.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"

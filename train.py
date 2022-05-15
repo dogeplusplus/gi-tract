@@ -85,6 +85,7 @@ def main():
         encoder_weights="imagenet",
         in_channels=in_dim,
         classes=out_dim,
+        activation="sigmoid",
     )
     model.to(device)
 

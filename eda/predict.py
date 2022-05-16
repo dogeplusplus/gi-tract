@@ -8,6 +8,7 @@ import torch.nn as nn
 import albumentations as A
 import matplotlib.pyplot as plt
 
+from argparse import ArgumentParser
 from pathlib import Path
 from einops import rearrange
 
@@ -65,13 +66,25 @@ def display_predictions(model: nn.Module, num_images: int, images_path: Path, de
     plt.show()
 
 
-if __name__ == "__main__":
-    num_images = 5
-    images_path = Path("dataset", "images")
+def parse_arguments():
+    parser = ArgumentParser()
+    parser.add_argument("--run", "-r", help="Run ID", type=str)
+    parser.add_argument("--images", "-i", help="Number of images to display", type=int, default=5)
 
-    logged_model = 'runs:/519dae1c9c2e47be939177255aad1bf7/model'
+    args = parser.parse_args()
+    return args
+
+
+def main(args):
+    images_path = Path("dataset", "images")
+    logged_model = f"runs:/{args.run}/model"
     model = mlflow.pytorch.load_model(logged_model)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
 
-    display_predictions(model, num_images, images_path, device)
+    display_predictions(model, args.images, images_path, device)
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    main(args)

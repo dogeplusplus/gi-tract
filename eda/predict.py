@@ -1,31 +1,38 @@
+import cv2
 import sys
 import torch
 import random
 import mlflow
 import numpy as np
 import torch.nn as nn
+import albumentations as A
 import matplotlib.pyplot as plt
 
 from pathlib import Path
 from einops import rearrange
-from torchvision import transforms
 
 sys.path.append(".")
 
 
-def predict(model: nn.Module, image: torch.Tensor) -> torch.Tensor:
+def predict(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
     shape = image.shape
-    preprocessing = torch.nn.Sequential(
-        transforms.Resize((320, 320)),
-        transforms.Normalize((0.456), (0.225))
-    )
+    preprocessing = A.Compose([
+        A.Normalize((0.5), (0.5)),
+        A.Resize(320, 320, interpolation=cv2.INTER_NEAREST),
+    ])
 
-    image = rearrange(image, "h w -> 1 1 h w")
-    image = preprocessing(image)
+    image = rearrange(image, "h w -> h w 1")
+    data = preprocessing(image=image)
+    image = data["image"]
+    image = rearrange(image, "h w 1 -> 1 1 h w")
+    image = torch.from_numpy(image).to(device)
     pred = model(image)
-    pred = torch.argmax(pred, dim=1)
+    pred = nn.Sigmoid()(pred[0])
+    pred = torch.argmax(pred, dim=0)
+    pred = pred.cpu().detach().numpy()
 
-    pred_resized = transforms.Resize(shape)(pred)
+    pred_resized = A.Resize(*shape, interpolation=cv2.INTER_NEAREST)(image=pred)["image"]
+
     return pred_resized
 
 
@@ -39,8 +46,7 @@ def display_predictions(model: nn.Module, num_images: int, images_path: Path, de
 
     cols = 3
     fig, ax = plt.subplots(num_images, cols)
-    predictions = [predict(model, torch.from_numpy(image).to(device)) for image in images]
-    predictions = [p.cpu().detach().numpy()[0] for p in predictions]
+    predictions = [predict(model, image, device) for image in images]
 
     ax[0, 0].set_title("Image")
     ax[0, 1].set_title("Ground Truth")
@@ -63,7 +69,7 @@ if __name__ == "__main__":
     num_images = 5
     images_path = Path("dataset", "images")
 
-    logged_model = 'runs:/54db63cc351242399e8fc208d55e0ed7/model'
+    logged_model = 'runs:/519dae1c9c2e47be939177255aad1bf7/model'
     model = mlflow.pytorch.load_model(logged_model)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)

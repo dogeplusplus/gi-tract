@@ -4,6 +4,7 @@ import torch
 import mlflow
 import numpy as np
 import torchmetrics
+import torch.nn as nn
 import albumentations as A
 import segmentation_models_pytorch as smp
 
@@ -16,6 +17,91 @@ from torch.cuda.amp import autocast, GradScaler
 
 # from models.unet import UNet
 from utils.dataset import GITract, split_train_test_cases
+
+
+def train_epoch(model, data_loader, device, epoch, display_every, loss_fn, optimizer):
+    metrics = {
+        "loss": torchmetrics.MeanMetric(),
+        "dice": torchmetrics.MeanMetric(),
+        "gpu_mem": torchmetrics.MeanMetric(),
+    }
+    for metric in metrics.values():
+        metric.to(device)
+    train_bar = tqdm.tqdm(data_loader, total=len(data_loader), desc=f"Train Epoch: {epoch}")
+
+    scaler = GradScaler()
+    for i, (x, y) in enumerate(train_bar):
+        optimizer.zero_grad()
+        x = rearrange(x, "b h w c -> b c h w")
+        y = rearrange(y, "b h w c -> b c h w")
+        x = x.to(device)
+        y = y.to(device)
+        with autocast():
+            pred = model(x)
+            loss = loss_fn(pred, y)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        loss = loss.detach()
+
+        pred = nn.Sigmoid()(pred)
+        dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach()
+        mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0
+
+        metrics["loss"].update(loss)
+        metrics["dice"].update(dice)
+        metrics["gpu_mem"].update(mem)
+
+        if i % display_every == 0:
+            display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in metrics.items()}
+            train_bar.set_postfix(**display_metrics)
+
+    mlflow.log_metrics({
+        f"train_{k}": float(v.compute().cpu().numpy()) for k,
+        v in metrics.items()
+    }, step=epoch)
+
+
+@torch.no_grad()
+def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
+    metrics = {
+        "loss": torchmetrics.MeanMetric(),
+        "dice": torchmetrics.MeanMetric(),
+        "gpu_mem": torchmetrics.MeanMetric(),
+    }
+    for metric in metrics.values():
+        metric.to(device)
+
+    val_bar = tqdm.tqdm(data_loader, total=len(data_loader), desc=f"Valid Epoch: {epoch}")
+    for i, (x, y) in enumerate(val_bar):
+        x = rearrange(x, "b h w c -> b c h w")
+        y = rearrange(y, "b h w c -> b c h w")
+        x = x.to(device)
+        y = y.to(device)
+
+        pred = model(x)
+        loss = loss_fn(pred, y)
+
+        pred = nn.Sigmoid()(pred)
+        dice = torch.nan_to_num(compute_meandice(pred, y)).mean()
+        mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0
+
+        metrics["loss"].update(loss)
+        metrics["dice"].update(dice)
+        metrics["gpu_mem"].update(mem)
+
+        if i % display_every == 0:
+            display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in metrics.items()}
+            val_bar.set_postfix(**display_metrics)
+
+    mlflow.log_metrics({
+        f"val_{k}": float(v.compute().cpu().numpy()) for k,
+        v in metrics.items()
+    }, step=epoch)
+
+    return metrics["loss"].compute().cpu().numpy()
 
 
 def main():
@@ -61,18 +147,18 @@ def main():
     val_ds = DataLoader(
         val_ds,
         batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=device == "cuda",
         prefetch_factor=prefetch_factor,
     )
 
-    epochs = 100
+    epochs = 15
     lr = 1e-3
     weight_decay = 1e-2
 
     in_dim = 1
-    out_dim = 4
+    out_dim = 3
 
     # filters = [16, 32, 64, 64]
     # kernel_size = (3, 3)
@@ -85,12 +171,10 @@ def main():
         encoder_weights="imagenet",
         in_channels=in_dim,
         classes=out_dim,
-        activation="sigmoid",
     )
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
-    scaler = GradScaler()
 
     losses = dict(
         bce_loss=smp.losses.SoftBCEWithLogitsLoss(),
@@ -102,84 +186,13 @@ def main():
     loss_fn = losses[loss_name]
 
     mlflow.log_param("loss_type", loss_name)
-    desc = "Train Epoch: {}"
-    val_desc = "Valid Epoch: {}"
     display_every = 50
 
     best_loss = np.inf
 
     for e in range(epochs):
-        train_metrics = {
-            "loss": torchmetrics.MeanMetric(),
-            "dice": torchmetrics.MeanMetric(),
-            "hausdorff": torchmetrics.MeanMetric(),
-        }
-        for metric in train_metrics.values():
-            metric.to(device)
-        train_bar = tqdm.tqdm(train_ds, total=len(train_ds), desc=desc.format(e))
-
-        for i, (x, y) in enumerate(train_bar):
-            optimizer.zero_grad()
-            x = rearrange(x, "b h w c -> b c h w")
-            y = rearrange(y, "b h w c -> b c h w")
-            x = x.to(device)
-            y = y.to(device)
-            with autocast():
-                pred = model(x)
-                loss = loss_fn(pred, y)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            loss = loss.detach()
-            dice = torch.nan_to_num(compute_meandice(pred, y)).mean().detach()
-            train_metrics["loss"].update(loss)
-            train_metrics["dice"].update(dice)
-
-            if i % display_every == 0:
-                display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in train_metrics.items()}
-                train_bar.set_postfix(**display_metrics)
-
-        mlflow.log_metrics({
-            f"train_{k}": float(v.compute().cpu().numpy()) for k,
-            v in train_metrics.items()
-        }, step=e)
-
-        val_metrics = {
-            "loss": torchmetrics.MeanMetric(),
-            "dice": torchmetrics.MeanMetric(),
-            "hausdorff": torchmetrics.MeanMetric(),
-        }
-        for metric in val_metrics.values():
-            metric.to(device)
-
-        val_bar = tqdm.tqdm(val_ds, total=len(val_ds), desc=val_desc.format(e))
-
-        with torch.no_grad():
-            for i, (x, y) in enumerate(val_bar):
-                x = rearrange(x, "b h w c -> b c h w")
-                y = rearrange(y, "b h w c -> b c h w")
-                x = x.to(device)
-                y = y.to(device)
-
-                pred = model(x)
-                loss = loss_fn(pred, y)
-                dice = torch.nan_to_num(compute_meandice(pred, y)).mean()
-
-                val_metrics["loss"].update(loss)
-                val_metrics["dice"].update(dice)
-
-                if i % display_every == 0:
-                    display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in val_metrics.items()}
-                    val_bar.set_postfix(**display_metrics)
-
-        mlflow.log_metrics({
-            f"val_{k}": float(v.compute().cpu().numpy()) for k,
-            v in val_metrics.items()
-        }, step=e)
-
-        val_loss = val_metrics["loss"].compute().cpu().numpy()
+        train_epoch(model, train_ds, device, e, display_every, loss_fn, optimizer)
+        val_loss = valid_epoch(model, val_ds, device, e, display_every, loss_fn)
         if val_loss < best_loss:
             best_loss = val_loss
             mlflow.pytorch.log_model(model, "model")

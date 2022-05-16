@@ -1,6 +1,7 @@
 import cv2
 import torch
 import mlflow
+import typing as t
 import numpy as np
 import torchmetrics
 import torch.nn as nn
@@ -10,7 +11,7 @@ import segmentation_models_pytorch as smp
 from ray import tune
 from pathlib import Path
 from einops import rearrange
-from torch.optim import AdamW
+from torch.optim import AdamW, Optimizer
 from torch.utils.data import DataLoader
 from monai.metrics import compute_meandice
 from torch.cuda.amp import autocast, GradScaler
@@ -19,7 +20,14 @@ from ray.tune.integration.mlflow import MLflowLoggerCallback
 from utils.dataset import GITract, split_train_test_cases
 
 
-def train_epoch(model, data_loader, device, epoch, loss_fn, optimizer):
+def train_epoch(
+    model: nn.Module,
+    data_loader: DataLoader,
+    device: str,
+    epoch: int,
+    loss_fn: t.Callable,
+    optimizer: Optimizer,
+) -> t.Dict[str, float]:
     metrics = {
         "loss": torchmetrics.MeanMetric(),
         "dice": torchmetrics.MeanMetric(),
@@ -53,14 +61,24 @@ def train_epoch(model, data_loader, device, epoch, loss_fn, optimizer):
         metrics["dice"].update(dice)
         metrics["gpu_mem"].update(mem)
 
-    mlflow.log_metrics({
+    metrics_numpy = {
         f"train_{k}": float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
-    }, step=epoch)
+    }
+
+    mlflow.log_metrics(metrics_numpy, step=epoch)
+
+    return metrics_numpy
 
 
 @torch.no_grad()
-def valid_epoch(model, data_loader, device, epoch, loss_fn):
+def valid_epoch(
+    model: nn.Module,
+    data_loader: DataLoader,
+    device: str,
+    epoch: int,
+    loss_fn: t.Callable
+) -> float:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     metrics = {
         "loss": torchmetrics.MeanMetric(),
@@ -125,8 +143,11 @@ def train(config):
         ),
     ], p=1.0)
 
-    train_ds = GITract(config["train_set"].images, config["train_set"].labels, transforms)
-    val_ds = GITract(config["val_set"].images, config["val_set"].labels, transforms)
+    val_ratio = 0.2
+    train_set, val_set = split_train_test_cases(config["dataset_dir"], val_ratio)
+
+    train_ds = GITract(train_set.images, train_set.labels, transforms)
+    val_ds = GITract(val_set.images, val_set.labels, transforms)
 
     train_ds = DataLoader(
         train_ds,
@@ -157,6 +178,8 @@ def train(config):
     for e in range(config["epochs"]):
         train_epoch(model, train_ds, device, e, loss_fn, optimizer)
         val_loss = valid_epoch(model, val_ds, device, e, loss_fn)
+
+        tune.report(iterations=e, mean_loss=val_loss)
         if val_loss < best_loss:
             best_loss = val_loss
             mlflow.pytorch.log_model(model, "model")
@@ -165,8 +188,6 @@ def train(config):
 def main():
     # For some reason need absolute paths to use with ray tune
     dataset_dir = Path("dataset").resolve()
-    val_ratio = 0.2
-    train_set, val_set = split_train_test_cases(dataset_dir, val_ratio)
 
     configs = {
         "epochs": 15,
@@ -184,14 +205,13 @@ def main():
         ]),
         "in_dim": 1,
         "out_dim": 3,
-        "train_set": train_set,
-        "val_set": val_set,
+        "dataset_dir": dataset_dir,
     }
 
     callbacks = [MLflowLoggerCallback(experiment_name="ray_tune", save_artifact=True)]
     resources_per_trial = {
-        "cpu": 12,
-        "gpu": 0.5,
+        "cpu": 10,
+        "gpu": 0.4,
     }
 
     tune.run(

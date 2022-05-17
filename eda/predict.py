@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from argparse import ArgumentParser
 from pathlib import Path
-from einops import rearrange
+from einops import rearrange, repeat
 
 sys.path.append(".")
 
@@ -18,14 +18,14 @@ sys.path.append(".")
 def predict(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
     shape = image.shape
     preprocessing = A.Compose([
-        A.Normalize((0.5), (0.5)),
-        A.Resize(320, 320, interpolation=cv2.INTER_NEAREST),
+        A.Resize(224, 224, interpolation=cv2.INTER_NEAREST),
     ])
 
-    image = rearrange(image, "h w -> h w 1")
+    image = repeat(image, "h w -> h w 3")
     data = preprocessing(image=image)
     image = data["image"]
-    image = rearrange(image, "h w 1 -> 1 1 h w")
+    image = rearrange(image, "h w c -> 1 c h w")
+
     image = torch.from_numpy(image).to(device)
     pred = model(image)
     pred = nn.Sigmoid()(pred[0])
@@ -43,6 +43,7 @@ def display_predictions(model: nn.Module, num_images: int, images_path: Path, de
     mask_paths = [Path(str(path).replace("images", "labels")) for path in image_paths]
 
     images = [np.load(p).astype(np.float32) for p in image_paths]
+    images = [img / img.max() for img in images]
     masks = [np.argmax(np.load(p), axis=-1) for p in mask_paths]
 
     cols = 3

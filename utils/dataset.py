@@ -1,9 +1,10 @@
+import random
 import numpy as np
 import typing as t
 
 from pathlib import Path
 from itertools import chain
-from einops import rearrange
+from einops import rearrange, repeat
 from dataclasses import dataclass
 from torch.utils.data import Dataset, random_split
 
@@ -34,6 +35,8 @@ class GITract(Dataset):
             img = data["image"]
             label = data["mask"]
 
+        img = repeat(img, "h w 1 -> h w c", c=3)
+        img /= img.max()
         return img, label
 
 
@@ -43,9 +46,8 @@ class DataPaths:
     labels: t.List[Path]
 
 
-def split_train_test_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPaths]:
+def split_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPaths]:
     image_dir = input_dir / "images"
-    label_dir = input_dir / "labels"
 
     cases = np.array([x.name for x in image_dir.iterdir()])
     val_len = int(val_ratio * len(cases))
@@ -58,7 +60,21 @@ def split_train_test_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPat
     train_images = list(chain.from_iterable((image_dir / case).rglob("**/*.npy") for case in train_cases))
     val_images = list(chain.from_iterable((image_dir / case).rglob("**/*.npy") for case in val_cases))
 
-    train_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.npy") for case in train_cases))
-    val_labels = list(chain.from_iterable((label_dir / case).rglob("**/*.npy") for case in val_cases))
+    train_labels = [Path(str(p).replace("images", "labels")) for p in train_images]
+    val_labels = [Path(str(p).replace("images", "labels")) for p in val_images]
+
+    return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)
+
+
+def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPaths]:
+    image_dir = input_dir / "images"
+
+    all_images = list(image_dir.rglob("**/*.npy"))
+    random.shuffle(all_images)
+    val_len = int(val_ratio * len(all_images))
+
+    train_images, val_images = all_images[val_len:], all_images[:val_len]
+    train_labels = [Path(str(p).replace("images", "labels")) for p in train_images]
+    val_labels = [Path(str(p).replace("images", "labels")) for p in val_images]
 
     return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)

@@ -23,9 +23,9 @@ def image_histogram_equalization(image: np.ndarray) -> np.ndarray:
 
 def create_color_mask(image: np.ndarray, label: np.ndarray) -> np.ndarray:
     classes = {
-        1: (255, 0, 0, 128),
-        2: (0, 255, 0, 128),
-        3: (0, 0, 255, 128),
+        0: (255, 0, 0, 128),
+        1: (0, 255, 0, 128),
+        2: (0, 0, 255, 128),
     }
 
     image = image_histogram_equalization(image)

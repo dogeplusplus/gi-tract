@@ -29,9 +29,10 @@ def predict(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
     image = torch.from_numpy(image).to(device)
     pred = model(image)
     pred = nn.Sigmoid()(pred[0])
-    pred = torch.argmax(pred, dim=0)
+    pred = (pred > 0.5).to(torch.float32)
     pred = pred.cpu().detach().numpy()
-
+    # Take the first non-background class
+    pred = np.argmax(pred, axis=0)
     pred_resized = A.Resize(*shape, interpolation=cv2.INTER_NEAREST)(image=pred)["image"]
 
     return pred_resized

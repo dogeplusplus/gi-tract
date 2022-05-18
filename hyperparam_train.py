@@ -1,5 +1,4 @@
 import torch
-import mlflow
 import typing as t
 import numpy as np
 import torchmetrics
@@ -9,11 +8,10 @@ import segmentation_models_pytorch as smp
 from ray import tune
 from pathlib import Path
 from einops import rearrange
-from torch.optim import AdamW, Optimizer
 from torch.utils.data import DataLoader
+from torch.optim import AdamW, Optimizer
 from monai.metrics import compute_meandice
 from torch.cuda.amp import autocast, GradScaler
-from ray.tune.integration.mlflow import MLflowLoggerCallback
 
 from utils.dataset import GITract, augmentations, split_cases
 
@@ -22,7 +20,6 @@ def train_epoch(
     model: nn.Module,
     data_loader: DataLoader,
     device: str,
-    epoch: int,
     loss_fn: t.Callable,
     optimizer: Optimizer,
 ) -> t.Dict[str, float]:
@@ -60,11 +57,9 @@ def train_epoch(
         metrics["gpu_mem"].update(mem)
 
     metrics_numpy = {
-        f"train_{k}": float(v.compute().cpu().numpy()) for k,
+        k: float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
     }
-
-    mlflow.log_metrics(metrics_numpy, step=epoch)
 
     return metrics_numpy
 
@@ -74,9 +69,8 @@ def valid_epoch(
     model: nn.Module,
     data_loader: DataLoader,
     device: str,
-    epoch: int,
     loss_fn: t.Callable
-) -> float:
+) -> t.Dict[str, float]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     metrics = {
         "loss": torchmetrics.MeanMetric(),
@@ -103,12 +97,12 @@ def valid_epoch(
         metrics["dice"].update(dice)
         metrics["gpu_mem"].update(mem)
 
-    mlflow.log_metrics({
-        f"val_{k}": float(v.compute().cpu().numpy()) for k,
+    metrics_numpy = {
+        k: float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
-    }, step=epoch)
+    }
 
-    return metrics["loss"].compute().cpu().numpy()
+    return metrics_numpy
 
 
 def train(config):
@@ -150,23 +144,40 @@ def train(config):
         prefetch_factor=prefetch_factor,
     )
 
-    weight_decay = 1e-2
+    weight_decay = 1e-6
     optimizer = AdamW(model.parameters(), config["learning_rate"], weight_decay=weight_decay)
 
     loss_fn = config["loss_fn"]
-    mlflow.log_param("loss_type", str(loss_fn))
 
     # Remove these tags as they are automatically populated
-    best_loss = np.inf
+    best_val_loss = np.inf
+    best_train_loss = np.inf
 
     for e in range(config["epochs"]):
-        train_epoch(model, train_ds, device, e, loss_fn, optimizer)
-        val_loss = valid_epoch(model, val_ds, device, e, loss_fn)
+        train_metrics = train_epoch(model, train_ds, device, loss_fn, optimizer)
+        val_metrics = valid_epoch(model, val_ds, device, loss_fn)
 
-        tune.report(iterations=e, mean_loss=val_loss)
-        if val_loss < best_loss:
-            best_loss = val_loss
-            mlflow.pytorch.log_model(model, "model")
+        train_loss = train_metrics["loss"]
+        val_loss = val_metrics["loss"]
+
+        if train_loss < best_train_loss:
+            best_train_loss = train_loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+
+        tune.report(
+            iterations=e,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            best_train_loss=best_train_loss,
+            best_val_loss=best_val_loss,
+        )
+
+
+def criterion(y_pred, y_true):
+    bce = smp.losses.SoftBCEWithLogitsLoss()(y_pred, y_true)
+    tve = smp.losses.TverskyLoss(mode="multilabel", log_loss=False)(y_pred, y_true)
+    return (bce + tve) / 2
 
 
 def main():
@@ -174,34 +185,34 @@ def main():
     dataset_dir = Path("dataset").resolve()
 
     configs = {
-        "epochs": 15,
+        "epochs": 3,
         "learning_rate": tune.choice([1e-3, 1e-4, 1e-5]),
         "batch_size": 4,
         "loss_fn": tune.choice([
             smp.losses.SoftBCEWithLogitsLoss(),
             smp.losses.DiceLoss(mode="multilabel"),
             smp.losses.TverskyLoss(mode="multilabel", log_loss=False),
+            criterion,
         ]),
         "encoder": tune.choice([
             {"name": "resnext50_32x4d", "weights": "imagenet"},
             {"name": "efficientnet-b1", "weights": "imagenet"},
             {"name": "densenet121", "weights": "imagenet"},
         ]),
-        "in_dim": 1,
+        "in_dim": 3,
         "out_dim": 3,
         "dataset_dir": dataset_dir,
     }
 
-    callbacks = [MLflowLoggerCallback(experiment_name="ray_tune", save_artifact=True)]
     resources_per_trial = {
-        "cpu": 10,
-        "gpu": 0.4,
+        "cpu": 12,
+        "gpu": 0.5,
     }
 
     tune.run(
         train,
         config=configs,
-        callbacks=callbacks,
+        num_samples=10,
         resources_per_trial=resources_per_trial,
     )
 

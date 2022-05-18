@@ -1,6 +1,7 @@
 import tqdm
 import torch
 import mlflow
+import typing as t
 import numpy as np
 import torchmetrics
 import torch.nn as nn
@@ -9,8 +10,8 @@ import segmentation_models_pytorch as smp
 from pathlib import Path
 from einops import rearrange
 from torch.utils.data import DataLoader
-from torch.optim import AdamW, lr_scheduler
 from torch.cuda.amp import autocast, GradScaler
+from torch.optim import AdamW, lr_scheduler, Optimizer
 
 from utils.dataset import GITract, split_images, augmentations
 
@@ -26,15 +27,15 @@ def dice_coef(y_true, y_pred, thr=0.5, dim=(2, 3), epsilon=1e-3):
 
 
 def train_epoch(
-    model,
-    data_loader,
-    device,
-    epoch,
-    display_every,
-    loss_fn,
-    optimizer,
-    lr_schedule=None
-):
+    model: nn.Module,
+    data_loader: DataLoader,
+    device: str,
+    epoch: int,
+    display_every: int,
+    loss_fn: t.Callable,
+    optimizer: Optimizer,
+    lr_schedule: object = None,
+) -> t.Dict[str, float]:
     metrics = {
         "loss": torchmetrics.MeanMetric(),
         "dice": torchmetrics.MeanMetric(),
@@ -76,10 +77,12 @@ def train_epoch(
             display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in metrics.items()}
             train_bar.set_postfix(**display_metrics)
 
-    mlflow.log_metrics({
+    metrics = {
         f"train_{k}": float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
-    }, step=epoch)
+    }
+
+    return metrics
 
 
 @torch.no_grad()
@@ -114,12 +117,12 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
             display_metrics = {k: f"{float(v.compute().cpu().numpy()):.4f}" for k, v in metrics.items()}
             val_bar.set_postfix(**display_metrics)
 
-    mlflow.log_metrics({
+    metrics = {
         f"val_{k}": float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
-    }, step=epoch)
+    }
 
-    return metrics["loss"].compute().cpu().numpy()
+    return metrics
 
 
 def main():
@@ -149,7 +152,7 @@ def main():
 
     val_ds = DataLoader(
         val_ds,
-        batch_size,
+        2*batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=device == "cuda",
@@ -196,8 +199,12 @@ def main():
     best_loss = np.inf
 
     for e in range(epochs):
-        train_epoch(model, train_ds, device, e, display_every, loss_fn, optimizer, lr_schedule)
-        val_loss = valid_epoch(model, val_ds, device, e, display_every, loss_fn)
+        train_metrics = train_epoch(model, train_ds, device, e, display_every, loss_fn, optimizer, lr_schedule)
+        val_metrics = valid_epoch(model, val_ds, device, e, display_every, loss_fn)
+        mlflow.log_metrics(train_metrics, step=e)
+        mlflow.log_metrics(val_metrics, step=e)
+
+        val_loss = val_metrics["loss"]
         if val_loss < best_loss:
             best_loss = val_loss
             mlflow.pytorch.log_model(model, "model")

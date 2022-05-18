@@ -1,11 +1,9 @@
-import cv2
 import torch
 import mlflow
 import typing as t
 import numpy as np
 import torchmetrics
 import torch.nn as nn
-import albumentations as A
 import segmentation_models_pytorch as smp
 
 from ray import tune
@@ -17,7 +15,7 @@ from monai.metrics import compute_meandice
 from torch.cuda.amp import autocast, GradScaler
 from ray.tune.integration.mlflow import MLflowLoggerCallback
 
-from utils.dataset import GITract, split_train_test_cases
+from utils.dataset import GITract, augmentations, split_cases
 
 
 def train_epoch(
@@ -127,24 +125,10 @@ def train(config):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    transforms = A.Compose([
-        A.Normalize((0.5), (0.5)),
-        A.Resize(*image_size, interpolation=cv2.INTER_NEAREST),
-        A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
-        A.OneOf([
-            A.GridDistortion(num_steps=5, distort_limit=0.05, p=1.0),
-            A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0),
-        ], p=0.25),
-        A.CoarseDropout(
-            max_holes=8,
-            max_height=image_size[0] // 20,
-            max_width=image_size[1] // 20,
-        ),
-    ], p=1.0)
+    transforms = augmentations(image_size)
 
     val_ratio = 0.2
-    train_set, val_set = split_train_test_cases(config["dataset_dir"], val_ratio)
+    train_set, val_set = split_cases(config["dataset_dir"], val_ratio)
 
     train_ds = GITract(train_set.images, train_set.labels, transforms)
     val_ds = GITract(val_set.images, val_set.labels, transforms)

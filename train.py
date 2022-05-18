@@ -1,11 +1,9 @@
-import cv2
 import tqdm
 import torch
 import mlflow
 import numpy as np
 import torchmetrics
 import torch.nn as nn
-import albumentations as A
 import segmentation_models_pytorch as smp
 
 from pathlib import Path
@@ -14,7 +12,7 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW, lr_scheduler
 from torch.cuda.amp import autocast, GradScaler
 
-from utils.dataset import GITract, split_images
+from utils.dataset import GITract, split_images, augmentations
 
 
 def dice_coef(y_true, y_pred, thr=0.5, dim=(2, 3), epsilon=1e-3):
@@ -134,22 +132,7 @@ def main():
     image_size = (224, 224)
 
     train_set, val_set = split_images(dataset_dir, val_ratio)
-
-    transforms = A.Compose([
-        A.Resize(*image_size, interpolation=cv2.INTER_NEAREST),
-        A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
-        A.OneOf([
-            A.GridDistortion(num_steps=5, distort_limit=0.05, p=1.0),
-            A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0),
-        ], p=0.25),
-        A.CoarseDropout(
-            max_holes=8,
-            max_height=image_size[0] // 20,
-            max_width=image_size[1] // 20,
-        ),
-    ], p=1.0)
-
+    transforms = augmentations(image_size)
     train_ds = GITract(train_set.images, train_set.labels, transforms)
     val_ds = GITract(val_set.images, val_set.labels, transforms)
 

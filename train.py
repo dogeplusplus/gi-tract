@@ -13,17 +13,37 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW, lr_scheduler, Optimizer
 
-from utils.dataset import GITract, split_images, augmentations
+from utils.dataset import GITract, split_cases, augmentations
 
 
-def dice_coef(y_true, y_pred, thr=0.5, dim=(2, 3), epsilon=1e-3):
+def dice_coef(
+    y_true: torch.Tensor,
+    y_pred: torch.Tensor,
+    thr: float = 0.5,
+    dim: t.Tuple[int, int] = (2, 3),
+    epsilon: float = 1e-3,
+) -> torch.Tensor:
     y_true = y_true.to(torch.float32)
     y_pred = (y_pred > thr).to(torch.float32)
     inter = (y_true*y_pred).sum(dim=dim)
-
     den = y_true.sum(dim=dim) + y_pred.sum(dim=dim)
     dice = ((2 * inter + epsilon) / (den + epsilon)).mean(dim=(1, 0))
     return dice
+
+
+def iou_coef(
+    y_true: torch.Tensor,
+    y_pred: torch.Tensor,
+    thr: float = 0.5,
+    dim: t.Tuple[int, int] = (2, 3),
+    epsilon: float = 1e-3,
+) -> torch.Tensor:
+    y_true = y_true.to(torch.float32)
+    y_pred = (y_pred > thr).to(torch.float32)
+    inter = (y_true*y_pred).sum(dim=dim)
+    union = (y_true + y_pred - y_true*y_pred).sum(dim=dim)
+    iou = ((inter+epsilon) / (union + epsilon)).mean(dim=(1, 0))
+    return iou
 
 
 def train_epoch(
@@ -34,11 +54,13 @@ def train_epoch(
     display_every: int,
     loss_fn: t.Callable,
     optimizer: Optimizer,
+    accumulator: float,
     lr_schedule: object = None,
 ) -> t.Dict[str, float]:
     metrics = {
         "loss": torchmetrics.MeanMetric(),
         "dice": torchmetrics.MeanMetric(),
+        "iou": torchmetrics.MeanMetric(),
         "gpu_mem": torchmetrics.MeanMetric(),
     }
     for metric in metrics.values():
@@ -47,7 +69,6 @@ def train_epoch(
 
     scaler = GradScaler()
     for i, (x, y) in enumerate(train_bar):
-        optimizer.zero_grad()
         x = rearrange(x, "b h w c -> b c h w")
         y = rearrange(y, "b h w c -> b c h w")
         x = x.to(device)
@@ -55,22 +76,28 @@ def train_epoch(
         with autocast():
             pred = model(x)
             loss = loss_fn(pred, y)
+            loss = loss / accumulator
 
         scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
 
-        if lr_schedule is not None:
-            lr_schedule.step()
+        if (i+1) % accumulator == 0:
+            scaler.step(optimizer)
+            scaler.update()
+
+            optimizer.zero_grad()
+            if lr_schedule is not None:
+                lr_schedule.step()
 
         loss = loss.detach()
 
         pred = nn.Sigmoid()(pred)
-        dice = dice_coef(pred, y).detach()
+        dice = dice_coef(y, pred).detach()
+        iou = iou_coef(y, pred).detach()
         mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0
 
         metrics["loss"].update(loss)
         metrics["dice"].update(dice)
+        metrics["iou"].update(iou)
         metrics["gpu_mem"].update(mem)
 
         if i % display_every == 0:
@@ -78,7 +105,7 @@ def train_epoch(
             train_bar.set_postfix(**display_metrics)
 
     metrics = {
-        f"train_{k}": float(v.compute().cpu().numpy()) for k,
+        k: float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
     }
 
@@ -90,6 +117,7 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
     metrics = {
         "loss": torchmetrics.MeanMetric(),
         "dice": torchmetrics.MeanMetric(),
+        "iou": torchmetrics.MeanMetric(),
         "gpu_mem": torchmetrics.MeanMetric(),
     }
     for metric in metrics.values():
@@ -106,11 +134,13 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
         loss = loss_fn(pred, y)
 
         pred = nn.Sigmoid()(pred)
-        dice = dice_coef(pred, y).detach()
+        dice = dice_coef(y, pred).detach()
+        iou = iou_coef(y, pred).detach()
         mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0
 
         metrics["loss"].update(loss)
         metrics["dice"].update(dice)
+        metrics["iou"].update(iou)
         metrics["gpu_mem"].update(mem)
 
         if i % display_every == 0:
@@ -118,7 +148,7 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
             val_bar.set_postfix(**display_metrics)
 
     metrics = {
-        f"val_{k}": float(v.compute().cpu().numpy()) for k,
+        k: float(v.compute().cpu().numpy()) for k,
         v in metrics.items()
     }
 
@@ -129,12 +159,13 @@ def main():
     dataset_dir = Path("dataset")
 
     val_ratio = 0.2
-    batch_size = 64
-    num_workers = 8
+    batch_size = 128
+    num_workers = 4
     prefetch_factor = 8
     image_size = (224, 224)
+    accumulator = max(1, 32 // batch_size)
 
-    train_set, val_set = split_images(dataset_dir, val_ratio)
+    train_set, val_set = split_cases(dataset_dir, val_ratio)
     transforms = augmentations(image_size)
     train_ds = GITract(train_set.images, train_set.labels, transforms)
     val_ds = GITract(val_set.images, val_set.labels, transforms)
@@ -159,8 +190,8 @@ def main():
         prefetch_factor=prefetch_factor,
     )
 
-    epochs = 100
-    lr = 1e-3
+    epochs = 20
+    lr = 2e-3
     weight_decay = 1e-6
 
     in_dim = 3
@@ -168,7 +199,7 @@ def main():
     t_max = int(30000 / batch_size * epochs) + 50
 
     model = smp.Unet(
-        encoder_name="efficientnet-b1",
+        encoder_name="timm-res2net50_26w_4s",
         encoder_weights="imagenet",
         in_channels=in_dim,
         classes=out_dim,
@@ -199,10 +230,20 @@ def main():
     best_loss = np.inf
 
     for e in range(epochs):
-        train_metrics = train_epoch(model, train_ds, device, e, display_every, loss_fn, optimizer, lr_schedule)
+        train_metrics = train_epoch(
+            model,
+            train_ds,
+            device,
+            e,
+            display_every,
+            loss_fn,
+            optimizer,
+            accumulator,
+            lr_schedule
+        )
         val_metrics = valid_epoch(model, val_ds, device, e, display_every, loss_fn)
-        mlflow.log_metrics(train_metrics, step=e)
-        mlflow.log_metrics(val_metrics, step=e)
+        mlflow.log_metrics({f"train_{k}": v for k, v in train_metrics.items()}, step=e)
+        mlflow.log_metrics({f"valid_{k}": v for k, v in val_metrics.items()}, step=e)
 
         val_loss = val_metrics["loss"]
         if val_loss < best_loss:

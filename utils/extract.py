@@ -7,14 +7,6 @@ from itertools import repeat
 from multiprocessing import Pool
 
 
-CLASS_MAPPING = {
-    "background": 0,
-    "large_bowel": 1,
-    "small_bowel": 2,
-    "stomach": 3,
-}
-
-
 def parse_segmentation(
     rle_segmentation: str,
     image_size: np.ndarray,
@@ -55,11 +47,13 @@ def running_length(arr: np.ndarray) -> str:
 
 def convert_to_rle(mask: np.ndarray, id: str) -> pd.DataFrame:
     rows = []
+    CLASS_MAPPING = {
+        "large_bowel": 1,
+        "small_bowel": 2,
+        "stomach": 3,
+    }
 
     for name, value in CLASS_MAPPING.items():
-        # Skip background
-        if value == 0:
-            continue
         submask = np.where(mask == value, 1, 0)
         # ordered from top to bottom, left to right
         flat_mask = submask.flatten(order="F")

@@ -15,8 +15,8 @@ class GITract(Dataset):
     def __init__(self, images: t.List[Path], labels: t.List[Path], transforms=None):
         assert len(images) == len(
             labels), f"Images and Labels unequal length, Images: {len(images)}, Labels: {len(labels)}"
-        self.images = images
-        self.labels = labels
+        self.images = np.array(images)
+        self.labels = np.array(labels)
         self.transforms = transforms
 
     def __len__(self):
@@ -30,6 +30,7 @@ class GITract(Dataset):
         label = np.load(label_path)
 
         img = np.asarray(img, dtype=np.float32)
+        img /= img.max()
         label = np.asarray(label, dtype=np.float32)
 
         if self.transforms:
@@ -38,7 +39,6 @@ class GITract(Dataset):
             label = data["mask"]
 
         img = repeat(img, "h w 1 -> h w c", c=3)
-        img /= img.max()
         return img, label
 
 
@@ -95,6 +95,9 @@ def augmentations(image_size: t.Tuple[int, int]) -> A.Compose:
             max_holes=8,
             max_height=image_size[0] // 20,
             max_width=image_size[1] // 20,
+            fill_value=0,
+            mask_fill_value=0,
+            p=0.5,
         ),
     ], p=1.0)
 

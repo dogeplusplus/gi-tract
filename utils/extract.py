@@ -17,7 +17,6 @@ CLASS_MAPPING = {
 
 def parse_segmentation(
     rle_segmentation: str,
-    label: str,
     image_size: np.ndarray,
 ) -> np.ndarray:
     flat_mask = np.zeros(np.product(image_size), dtype=np.int8)
@@ -26,7 +25,7 @@ def parse_segmentation(
     for idx in range(0, len(runs), 2):
         start = runs[idx]
         length = runs[idx+1]
-        flat_mask[start:start+length] = CLASS_MAPPING[label]
+        flat_mask[start:start+length] = 1
 
     mask = np.reshape(flat_mask, image_size)
 
@@ -80,7 +79,7 @@ def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
     masks = []
 
     for _, seg in segments.iterrows():
-        segment_mask = parse_segmentation(seg["segmentation"], seg["class"], image_size)
+        segment_mask = parse_segmentation(seg["segmentation"], image_size)
         masks.append(segment_mask)
 
     onehot_mask = np.stack(masks, axis=-1)

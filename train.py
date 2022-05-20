@@ -190,7 +190,7 @@ def main():
         prefetch_factor=prefetch_factor,
     )
 
-    epochs = 20
+    epochs = 100
     lr = 2e-3
     weight_decay = 1e-6
 
@@ -199,7 +199,7 @@ def main():
     t_max = int(30000 / batch_size * epochs) + 50
 
     model = smp.Unet(
-        encoder_name="timm-res2net50_26w_4s",
+        encoder_name="efficientnet-b1",
         encoder_weights="imagenet",
         in_channels=in_dim,
         classes=out_dim,

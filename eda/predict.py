@@ -15,7 +15,7 @@ from einops import rearrange, repeat
 sys.path.append(".")
 
 
-def predict(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
+def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
     shape = image.shape
     preprocessing = A.Compose([
         A.Resize(224, 224, interpolation=cv2.INTER_NEAREST),
@@ -49,7 +49,7 @@ def display_predictions(model: nn.Module, num_images: int, images_path: Path, de
 
     cols = 3
     fig, ax = plt.subplots(num_images, cols)
-    predictions = [predict(model, image, device) for image in images]
+    predictions = [predict_single_image(model, image, device) for image in images]
 
     ax[0, 0].set_title("Image")
     ax[0, 1].set_title("Ground Truth")

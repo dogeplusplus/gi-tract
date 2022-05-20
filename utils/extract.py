@@ -47,14 +47,14 @@ def running_length(arr: np.ndarray) -> str:
 
 def convert_to_rle(mask: np.ndarray, id: str) -> pd.DataFrame:
     rows = []
-    CLASS_MAPPING = {
-        "large_bowel": 1,
-        "small_bowel": 2,
-        "stomach": 3,
+    channel_index = {
+        "large_bowel": 0,
+        "small_bowel": 1,
+        "stomach": 2,
     }
 
-    for name, value in CLASS_MAPPING.items():
-        submask = np.where(mask == value, 1, 0)
+    for name, index in channel_index.items():
+        submask = mask[index]
         # ordered from top to bottom, left to right
         flat_mask = submask.flatten(order="F")
         predicted = running_length(flat_mask)

@@ -54,7 +54,7 @@ def convert_to_rle(mask: np.ndarray, id: str) -> pd.DataFrame:
     }
 
     for name, index in channel_index.items():
-        submask = mask[index]
+        submask = mask[..., index]
         # ordered from top to bottom, left to right
         flat_mask = submask.flatten(order="F")
         predicted = running_length(flat_mask)

@@ -116,14 +116,14 @@ def monai_augmentations(image_size: t.Tuple[int, int]) -> transforms.Compose:
         transforms.RandRotated(keys=["image", "label"], prob=0.2, range_x=[0.3, 0.3]),
         transforms.RandBiasFieldd(keys=["image"], degree=3, coeff_range=(0.2, 0.3), prob=0.2),
         transforms.OneOf([
-            transforms.GridDistortiond(keys=["image", "label"], num_cells=3, distory_steps=5),
+            transforms.RandGridDistortiond(keys=["image", "label"], num_cells=5, prob=0.2),
             transforms.Rand2DElasticd(
                 keys=["image", "label"],
                 spacing=(20, 20),
                 magnitude_range=(1, 2),
-                prob=1,
+                prob=0.2,
             ),
-        ], prob=0.5),
+        ], weights=[0.5, 0.5]),
         transforms.RandCoarseDropoutd(
             keys=["image", "label"],
             holes=8,
@@ -142,7 +142,7 @@ def is_empty(path: Path) -> bool:
     return np.max(mask) == 0
 
 
-def kfold_split(label_dir: Path, folds: int = 5, seed: int = 42) -> t.List[DataPaths]:
+def kfold_split(label_dir: Path, folds: int = 5, seed: int = 42) -> t.Tuple[t.List[DataPaths], t.List[DataPaths]]:
     labels = list(label_dir.rglob("*.npy"))
     case_names = [p.parent.name for p in labels]
 
@@ -158,11 +158,17 @@ def kfold_split(label_dir: Path, folds: int = 5, seed: int = 42) -> t.List[DataP
     skf = StratifiedGroupKFold(n_splits=folds, shuffle=True, random_state=seed)
     splits = skf.split(df, df["empty"], groups=df["cases"])
 
-    datasets = []
-    for _, indices in splits:
-        fold = df.iloc[indices]
-        label_paths = fold["labels"].tolist()
-        image_paths = [Path(str(p).replace("labels", "images")) for p in label_paths]
-        datasets.append(DataPaths(image_paths, label_paths))
+    train_datasets = []
+    val_datasets = []
+    for val_indices, train_indices in splits:
+        train_fold = df.iloc[train_indices]
+        train_label_paths = train_fold["labels"].tolist()
+        train_image_paths = [Path(str(p).replace("labels", "images")) for p in train_label_paths]
+        train_datasets.append(DataPaths(train_image_paths, train_label_paths))
 
-    return datasets
+        val_fold = df.iloc[val_indices]
+        val_label_paths = val_fold["labels"].tolist()
+        val_image_paths = [Path(str(p).replace("labels", "images")) for p in val_label_paths]
+        val_datasets.append(DataPaths(val_image_paths, val_label_paths))
+
+    return train_datasets, val_datasets

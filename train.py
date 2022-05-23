@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW, lr_scheduler, Optimizer
 
-from utils.dataset import GITract, split_cases, monai_augmentations
+from utils.dataset import GITract, split_cases, monai_augmentations, kfold_split
 
 
 def dice_coef(
@@ -150,6 +150,12 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
     return metrics
 
 
+def criterion(y_pred, y_true):
+    bce = smp.losses.SoftBCEWithLogitsLoss()(y_pred, y_true)
+    tve = smp.losses.TverskyLoss(mode="multilabel", log_loss=False)(y_pred, y_true)
+    return (bce + tve) / 2
+
+
 def main():
     dataset_dir = Path("dataset")
 
@@ -204,11 +210,6 @@ def main():
     optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
     lr_schedule = lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=1e-6)
 
-    def criterion(y_pred, y_true):
-        bce = smp.losses.SoftBCEWithLogitsLoss()(y_pred, y_true)
-        tve = smp.losses.TverskyLoss(mode="multilabel", log_loss=False)(y_pred, y_true)
-        return (bce + tve) / 2
-
     losses = dict(
         bce_loss=smp.losses.SoftBCEWithLogitsLoss(),
         dice_loss=smp.losses.DiceLoss(mode="multilabel"),
@@ -246,5 +247,98 @@ def main():
             mlflow.pytorch.log_model(model, "model")
 
 
+def train_ensemble():
+    dataset_dir = Path("dataset")
+
+    batch_size = 128
+    num_workers = 4
+    prefetch_factor = 8
+    image_size = (224, 224)
+    accumulator = max(1, 32 // batch_size)
+    epochs = 15
+    lr = 2e-3
+    weight_decay = 1e-6
+
+    in_dim = 3
+    out_dim = 3
+    t_max = int(30000 / batch_size * epochs) + 50
+
+    train_folds, val_folds = kfold_split(dataset_dir / "labels")
+    transforms = monai_augmentations(image_size)
+
+    train_datasets = [GITract(fold.images, fold.labels, transforms) for fold in train_folds]
+    val_datasets = [GITract(fold.images, fold.labels, transforms) for fold in val_folds]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    mlflow.set_experiment("ensemble")
+    for i, (train_ds, val_ds) in enumerate(zip(train_datasets, val_datasets)):
+        with mlflow.start_run(run_name=f"fold_{i}"):
+            train_ds = DataLoader(
+                train_ds,
+                batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+                pin_memory=device == "cuda",
+                prefetch_factor=prefetch_factor,
+            )
+
+            val_ds = DataLoader(
+                val_ds,
+                2*batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                pin_memory=device == "cuda",
+                prefetch_factor=prefetch_factor,
+            )
+
+            model = smp.Unet(
+                encoder_name="efficientnet-b1",
+                encoder_weights="imagenet",
+                in_channels=in_dim,
+                classes=out_dim,
+            )
+            model.to(device)
+
+            optimizer = AdamW(model.parameters(), lr, weight_decay=weight_decay)
+            lr_schedule = lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=1e-6)
+
+            losses = dict(
+                bce_loss=smp.losses.SoftBCEWithLogitsLoss(),
+                dice_loss=smp.losses.DiceLoss(mode="multilabel"),
+                tve_loss=smp.losses.TverskyLoss(mode="multilabel", log_loss=False),
+                mixed_loss=criterion,
+            )
+
+            loss_name = "mixed_loss"
+            loss_fn = losses[loss_name]
+
+            mlflow.log_param("loss_type", loss_name)
+            display_every = 50
+
+            best_loss = np.inf
+
+            for e in range(epochs):
+                train_metrics = train_epoch(
+                    model,
+                    train_ds,
+                    device,
+                    e,
+                    display_every,
+                    loss_fn,
+                    optimizer,
+                    accumulator,
+                    lr_schedule
+                )
+                val_metrics = valid_epoch(model, val_ds, device, e, display_every, loss_fn)
+
+                mlflow.log_metrics({f"train_{k}": v for k, v in train_metrics.items()}, step=e)
+                mlflow.log_metrics({f"valid_{k}": v for k, v in val_metrics.items()}, step=e)
+
+                val_loss = val_metrics["loss"]
+                if val_loss < best_loss:
+                    best_loss = val_loss
+                    mlflow.pytorch.log_model(model, "model")
+
+
 if __name__ == "__main__":
-    main()
+    train_ensemble()

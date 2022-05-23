@@ -1,15 +1,18 @@
 import cv2
 import random
 import numpy as np
+import pandas as pd
 import typing as t
 import albumentations as A
 import monai.transforms as transforms
 
 from pathlib import Path
 from itertools import chain
+from multiprocessing import Pool
 from einops import rearrange, repeat
 from dataclasses import dataclass
 from torch.utils.data import Dataset, random_split
+from sklearn.model_selection import StratifiedGroupKFold
 
 
 class GITract(Dataset):
@@ -132,3 +135,34 @@ def monai_augmentations(image_size: t.Tuple[int, int]) -> transforms.Compose:
     ])
 
     return augmentation
+
+
+def is_empty(path: Path) -> bool:
+    mask = np.load(path)
+    return np.max(mask) == 0
+
+
+def kfold_split(label_dir: Path, folds: int = 5, seed: int = 42) -> t.List[DataPaths]:
+    labels = list(label_dir.rglob("*.npy"))
+    case_names = [p.parent.name for p in labels]
+
+    with Pool() as pool:
+        empty = pool.map(is_empty, labels)
+
+    df = pd.DataFrame({
+        "labels": labels,
+        "cases": case_names,
+        "empty": empty,
+    })
+
+    skf = StratifiedGroupKFold(n_splits=folds, shuffle=True, random_state=seed)
+    splits = skf.split(df, df["empty"], groups=df["cases"])
+
+    datasets = []
+    for _, indices in splits:
+        fold = df.iloc[indices]
+        label_paths = fold["labels"].tolist()
+        image_paths = [Path(str(p).replace("labels", "images")) for p in label_paths]
+        datasets.append(DataPaths(image_paths, label_paths))
+
+    return datasets

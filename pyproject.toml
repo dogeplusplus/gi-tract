@@ -25,6 +25,7 @@ segmentation-models-pytorch = "^0.2.1"
 albumentations = "^1.1.0"
 ray = {extras = ["tune"], version = "^1.12.0"}
 kaggle = "^1.5.12"
+scikit-learn = "^1.1.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"

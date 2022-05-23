@@ -3,6 +3,7 @@ import random
 import numpy as np
 import typing as t
 import albumentations as A
+import monai.transforms as transforms
 
 from pathlib import Path
 from itertools import chain
@@ -31,14 +32,15 @@ class GITract(Dataset):
 
         img = np.asarray(img, dtype=np.float32)
         img /= img.max()
+        img = repeat(img, "h w -> c h w", c=3)
         label = np.asarray(label, dtype=np.float32)
+        label = rearrange(label, "h w c -> c h w")
 
         if self.transforms:
-            data = self.transforms(image=rearrange(img, "h w -> h w 1"), mask=label)
+            data = self.transforms({"image": img, "label": label})
             img = data["image"]
-            label = data["mask"]
+            label = data["label"]
 
-        img = repeat(img, "h w 1 -> h w c", c=3)
         return img, label
 
 
@@ -102,3 +104,31 @@ def augmentations(image_size: t.Tuple[int, int]) -> A.Compose:
     ], p=1.0)
 
     return transforms
+
+
+def monai_augmentations(image_size: t.Tuple[int, int]) -> transforms.Compose:
+    augmentation = transforms.Compose([
+        transforms.Resized(keys=["image", "label"], spatial_size=image_size),
+        transforms.RandFlipd(keys=["image", "label"], prob=0.2, spatial_axis=0),
+        transforms.RandRotated(keys=["image", "label"], prob=0.2, range_x=[0.3, 0.3]),
+        transforms.RandBiasFieldd(keys=["image"], degree=3, coeff_range=(0.2, 0.3), prob=0.2),
+        transforms.OneOf([
+            transforms.GridDistortiond(keys=["image", "label"], num_cells=3, distory_steps=5),
+            transforms.Rand2DElasticd(
+                keys=["image", "label"],
+                spacing=(20, 20),
+                magnitude_range=(1, 2),
+                prob=1,
+            ),
+        ], prob=0.5),
+        transforms.RandCoarseDropoutd(
+            keys=["image", "label"],
+            holes=8,
+            spatial_size=(image_size[0] // 20, image_size[1] // 20),
+            fill_value=0,
+            prob=0.3,
+        ),
+        transforms.RandAdjustContrastd(keys=["image"], prob=0.2, gamma=(0.5, 4.5)),
+    ])
+
+    return augmentation

@@ -8,12 +8,11 @@ import torch.nn as nn
 import segmentation_models_pytorch as smp
 
 from pathlib import Path
-from einops import rearrange
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW, lr_scheduler, Optimizer
 
-from utils.dataset import GITract, split_cases, augmentations
+from utils.dataset import GITract, split_cases, monai_augmentations
 
 
 def dice_coef(
@@ -69,8 +68,6 @@ def train_epoch(
 
     scaler = GradScaler()
     for i, (x, y) in enumerate(train_bar):
-        x = rearrange(x, "b h w c -> b c h w")
-        y = rearrange(y, "b h w c -> b c h w")
         x = x.to(device)
         y = y.to(device)
         with autocast():
@@ -125,8 +122,6 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
 
     val_bar = tqdm.tqdm(data_loader, total=len(data_loader), desc=f"Valid Epoch: {epoch}")
     for i, (x, y) in enumerate(val_bar):
-        x = rearrange(x, "b h w c -> b c h w")
-        y = rearrange(y, "b h w c -> b c h w")
         x = x.to(device)
         y = y.to(device)
 
@@ -166,7 +161,7 @@ def main():
     accumulator = max(1, 32 // batch_size)
 
     train_set, val_set = split_cases(dataset_dir, val_ratio)
-    transforms = augmentations(image_size)
+    transforms = monai_augmentations(image_size)
     train_ds = GITract(train_set.images, train_set.labels, transforms)
     val_ds = GITract(val_set.images, val_set.labels, transforms)
 
@@ -190,7 +185,7 @@ def main():
         prefetch_factor=prefetch_factor,
     )
 
-    epochs = 100
+    epochs = 15
     lr = 2e-3
     weight_decay = 1e-6
 

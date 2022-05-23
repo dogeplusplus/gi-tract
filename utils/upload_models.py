@@ -22,7 +22,9 @@ def commit_model(model_run: str, mlruns_folder: Path, dataset_dir: Path) -> int:
         "-p",
         "model_instances",
         "-m",
-        '"New model"'
+        '"New model"',
+        "-r",
+        "zip",
     ]
     logger.info("Starting to upload new dataset version...")
     proc = subprocess.run(command)

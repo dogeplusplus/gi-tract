@@ -24,51 +24,6 @@ def parse_segmentation(
     return mask
 
 
-def running_length(arr: np.ndarray) -> str:
-    runs = []
-    length = 0
-    start = 0
-
-    for i in range(len(arr)):
-        if arr[i] == 0 and length > 0:
-            runs += [str(start), str(length)]
-            length = 0
-            start = -1
-        elif arr[i] == 1:
-            if length == 0:
-                start = i
-            length += 1
-
-    if length > 0:
-        runs += [str(start), str(length)]
-
-    return " ".join(runs)
-
-
-def convert_to_rle(mask: np.ndarray, id: str) -> pd.DataFrame:
-    rows = []
-    channel_index = {
-        "large_bowel": 0,
-        "small_bowel": 1,
-        "stomach": 2,
-    }
-
-    for name, index in channel_index.items():
-        submask = mask[..., index]
-        # ordered from top to bottom, left to right
-        flat_mask = submask.flatten(order="F")
-        predicted = running_length(flat_mask)
-        entry = {
-            "id": id,
-            "class": name,
-            "predicted": predicted or None,
-        }
-        rows.append(entry)
-
-    df = pd.DataFrame(rows)
-    return df
-
-
 def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
     masks = []
 

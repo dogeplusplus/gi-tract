@@ -15,6 +15,25 @@ from torch.utils.data import Dataset, random_split
 from sklearn.model_selection import StratifiedGroupKFold
 
 
+class GITract3D(Dataset):
+    def __init__(self, image_stacks: t.List[Path], label_stacks: t.List[Path], transforms=None):
+        self.image_stacks = image_stacks
+        self.label_stacks = label_stacks
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.image_stacks)
+
+    def __getitem__(self, idx):
+        image_stack = np.load(self.image_stacks[idx])
+        label_stack = np.load(self.label_stacks[idx])
+
+        image_stack = np.asarray(image_stack, dtype=np.float32)
+        image_stack /= image_stack.max()
+
+        return image_stack, label_stack
+
+
 class GITract(Dataset):
     def __init__(self, images: t.List[Path], labels: t.List[Path], transforms=None):
         assert len(images) == len(

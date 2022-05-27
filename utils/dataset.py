@@ -1,9 +1,7 @@
-import cv2
 import random
 import numpy as np
 import pandas as pd
 import typing as t
-import albumentations as A
 import monai.transforms as transforms
 
 from pathlib import Path
@@ -106,31 +104,9 @@ def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPa
     return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)
 
 
-def augmentations(image_size: t.Tuple[int, int]) -> A.Compose:
-    transforms = A.Compose([
-        A.Resize(*image_size, interpolation=cv2.INTER_NEAREST),
-        A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.05, rotate_limit=10, p=0.5),
-        A.OneOf([
-            A.GridDistortion(num_steps=5, distort_limit=0.05, p=1.0),
-            A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0),
-        ], p=0.25),
-        A.CoarseDropout(
-            max_holes=8,
-            max_height=image_size[0] // 20,
-            max_width=image_size[1] // 20,
-            fill_value=0,
-            mask_fill_value=0,
-            p=0.5,
-        ),
-    ], p=1.0)
-
-    return transforms
-
-
 def monai_augmentations(image_size: t.Tuple[int, int]) -> transforms.Compose:
     augmentation = transforms.Compose([
-        transforms.Resized(keys=["image", "label"], spatial_size=image_size),
+        transforms.Resized(keys=["image", "label"], spatial_size=image_size, mode="nearest"),
         transforms.RandFlipd(keys=["image", "label"], prob=0.2, spatial_axis=0),
         transforms.RandRotated(keys=["image", "label"], prob=0.2, range_x=[0.3, 0.3]),
         transforms.RandBiasFieldd(keys=["image"], degree=3, coeff_range=(0.2, 0.3), prob=0.2),

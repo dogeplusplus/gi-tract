@@ -41,7 +41,7 @@ def main():
     labels = [Path(str(p).replace("images", "labels")) for p in images]
 
     preprocessing = transforms.Compose([
-        transforms.Resized(keys=["image", "label"], spatial_size=(224, 224)),
+        transforms.Resized(keys=["image", "label"], spatial_size=(224, 224), mode="nearest"),
     ])
     dataset = GITract(images, labels, preprocessing)
     batch_size = 32

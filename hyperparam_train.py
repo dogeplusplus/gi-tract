@@ -13,7 +13,7 @@ from torch.optim import AdamW, Optimizer
 from monai.metrics import compute_meandice
 from torch.cuda.amp import autocast, GradScaler
 
-from utils.dataset import GITract, augmentations, split_cases
+from utils.dataset import GITract, split_cases, monai_augmentations
 
 
 def train_epoch(
@@ -119,7 +119,7 @@ def train(config):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    transforms = augmentations(image_size)
+    transforms = monai_augmentations(image_size)
 
     val_ratio = 0.2
     train_set, val_set = split_cases(config["dataset_dir"], val_ratio)

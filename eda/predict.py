@@ -1,11 +1,10 @@
-import cv2
 import sys
 import torch
 import random
 import mlflow
 import numpy as np
 import torch.nn as nn
-import albumentations as A
+import monai.transforms as transforms
 import matplotlib.pyplot as plt
 
 from argparse import ArgumentParser
@@ -17,14 +16,13 @@ sys.path.append(".")
 
 def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
     shape = image.shape
-    preprocessing = A.Compose([
-        A.Resize(224, 224, interpolation=cv2.INTER_NEAREST),
+    preprocessing = transforms.Compose([
+        transforms.Resize(spatial_size=(224, 224), mode="nearest"),
     ])
 
-    image = repeat(image, "h w -> h w 3")
-    data = preprocessing(image=image)
-    image = data["image"]
-    image = rearrange(image, "h w c -> 1 c h w")
+    image = repeat(image, "h w -> 3 h w")
+    image = preprocessing(image)
+    image = rearrange(image, "c h w -> 1 c h w")
 
     image = torch.from_numpy(image).to(device)
     pred = model(image)
@@ -32,10 +30,10 @@ def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> 
     pred = (pred > 0.5).to(torch.float32)
     pred = pred.cpu().detach().numpy()
     # Take the first non-background class
+    pred = transforms.Resize(spatial_size=shape, mode="nearest")(pred)
     pred = np.argmax(pred, axis=0)
-    pred_resized = A.Resize(*shape, interpolation=cv2.INTER_NEAREST)(image=pred)["image"]
 
-    return pred_resized
+    return pred
 
 
 def display_predictions(model: nn.Module, num_images: int, images_path: Path, device: str):

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def parse_arguments():
     parser = ArgumentParser("Evaluate model performance")
-    parser.add_argument("--model", type=str, help="Path to model weights.")
+    parser.add_argument("--version", type=str, help="Model version number.")
     parser.add_argument("--dataset", type=str, help="Path to dataset.")
 
     args = parser.parse_args()
@@ -29,8 +29,12 @@ def parse_arguments():
 def main():
     args = parse_arguments()
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = torch.load(args.model, map_location=device)
-    model.eval()
+    models = [
+        torch.load(model_path, map_location=device)
+        for model_path in Path("model_instances", str(args.version)).iterdir()
+    ]
+    for model in models:
+        model.eval()
 
     images_dir = Path(args.dataset) / "images"
     images = list(images_dir.rglob("*.npy"))
@@ -52,12 +56,18 @@ def main():
     for xs, ys in tqdm(loader, total=len(loader)):
         xs = xs.to(device)
         ys = ys.to(device)
-        pred = model(xs)
-        pred = nn.Sigmoid()(pred)
-        pred = pred > thr
 
-        dice = dice_coef(ys, pred)
-        iou = iou_coef(ys, pred)
+        combined = torch.zeros_like(ys)
+        for model in models:
+            pred = model(xs)
+            pred = nn.Sigmoid()(pred)
+            combined += pred
+
+        combined = combined / len(models)
+        prediction = combined > thr
+
+        dice = dice_coef(ys, prediction)
+        iou = iou_coef(ys, prediction)
 
         mean_dice.update(dice)
         miou.update(iou)

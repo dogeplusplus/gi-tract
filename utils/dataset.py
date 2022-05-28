@@ -29,6 +29,11 @@ class GITract3D(Dataset):
         image_stack = np.asarray(image_stack, dtype=np.float32)
         image_stack /= image_stack.max()
 
+        if self.transforms:
+            data = self.transforms({"image": image_stack, "label": label_stack})
+            image_stack = data["image"]
+            label_stack = data["label"]
+
         return image_stack, label_stack
 
 

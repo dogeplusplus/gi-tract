@@ -90,9 +90,9 @@ def preprocess_dataset_3d(df: pd.DataFrame, input_dir: Path, dataset_dir: Path):
 
 
 def main():
-    input_dir = Path("raw_dataset")
-    dataset_dir = Path("3d_dataset")
-    df = pd.read_csv("train.csv")
+    input_dir = Path("datasets", "raw_dataset")
+    dataset_dir = Path("datasets", "3d")
+    df = pd.read_csv(Path("datasets", "train.csv"))
     df["segmentation"].fillna(value="", inplace=True)
 
     preprocess_dataset_3d(df, input_dir, dataset_dir)

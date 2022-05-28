@@ -76,9 +76,9 @@ def preprocess_dataset(df: pd.DataFrame, input_dir: Path, dataset_dir: Path):
 
 
 def main():
-    input_dir = Path("raw_dataset")
-    dataset_dir = Path("dataset")
-    df = pd.read_csv("train.csv")
+    input_dir = Path("datasets", "raw_dataset")
+    dataset_dir = Path("datasets", "2d")
+    df = pd.read_csv(Path("datasets", "train.csv"))
     df["segmentation"].fillna(value="", inplace=True)
 
     preprocess_dataset(df, input_dir, dataset_dir)

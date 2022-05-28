@@ -12,7 +12,7 @@ from multiprocessing import Pool
 
 
 def image_class_distribution():
-    df = pd.read_csv("train.csv")
+    df = pd.read_csv(Path("datasets", "train.csv"))
     df["values"] = np.where(df["segmentation"].isna(), 0, 1)
     summary = df.pivot(index=["id"], columns=["class"], values=["values"])
     num_images = len(summary)

@@ -173,7 +173,7 @@ def main():
     # Note some stacks only have 80 z-slices but most seem to be 144
     image_size = (144, 224, 224)
     transforms = augmentation_3d(image_size)
-    dataset_dir = Path("3d_dataset")
+    dataset_dir = Path("datasets", "3d")
 
     images = list((dataset_dir / "images").iterdir())
     labels = list((dataset_dir / "labels").iterdir())

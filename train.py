@@ -214,7 +214,7 @@ def main():
 
 
 def train_ensemble():
-    dataset_dir = Path("dataset")
+    dataset_dir = Path("dataset", "2d")
 
     batch_size = 128
     num_workers = 4

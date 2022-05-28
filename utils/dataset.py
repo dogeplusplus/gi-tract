@@ -109,7 +109,7 @@ def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPa
     return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)
 
 
-def monai_augmentations(image_size: t.Tuple[int, int]) -> transforms.Compose:
+def augmentation_2d(image_size: t.Tuple[int, int]) -> transforms.Compose:
     augmentation = transforms.Compose([
         transforms.Resized(keys=["image", "label"], spatial_size=image_size, mode="nearest"),
         transforms.RandFlipd(keys=["image", "label"], prob=0.2, spatial_axis=0),

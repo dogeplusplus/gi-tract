@@ -12,37 +12,9 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW, lr_scheduler, Optimizer
 
-from utils.dataset import GITract, split_cases, monai_augmentations, kfold_split
-
-
-def dice_coef(
-    y_true: torch.Tensor,
-    y_pred: torch.Tensor,
-    thr: float = 0.5,
-    dim: t.Tuple[int, int] = (2, 3),
-    epsilon: float = 1e-3,
-) -> torch.Tensor:
-    y_true = y_true.to(torch.float32)
-    y_pred = (y_pred > thr).to(torch.float32)
-    inter = (y_true*y_pred).sum(dim=dim)
-    den = y_true.sum(dim=dim) + y_pred.sum(dim=dim)
-    dice = ((2 * inter + epsilon) / (den + epsilon)).mean(dim=(1, 0))
-    return dice
-
-
-def iou_coef(
-    y_true: torch.Tensor,
-    y_pred: torch.Tensor,
-    thr: float = 0.5,
-    dim: t.Tuple[int, int] = (2, 3),
-    epsilon: float = 1e-3,
-) -> torch.Tensor:
-    y_true = y_true.to(torch.float32)
-    y_pred = (y_pred > thr).to(torch.float32)
-    inter = (y_true*y_pred).sum(dim=dim)
-    union = (y_true + y_pred - y_true*y_pred).sum(dim=dim)
-    iou = ((inter+epsilon) / (union + epsilon)).mean(dim=(1, 0))
-    return iou
+from utils.losses import criterion
+from utils.metrics import iou_coef, dice_coef
+from utils.dataset import GITract, split_cases, augmentation_2d, kfold_split
 
 
 def train_epoch(
@@ -150,12 +122,6 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
     return metrics
 
 
-def criterion(y_pred, y_true):
-    bce = smp.losses.SoftBCEWithLogitsLoss()(y_pred, y_true)
-    tve = smp.losses.TverskyLoss(mode="multilabel", log_loss=False)(y_pred, y_true)
-    return (bce + tve) / 2
-
-
 def main():
     dataset_dir = Path("dataset")
 
@@ -167,7 +133,7 @@ def main():
     accumulator = max(1, 32 // batch_size)
 
     train_set, val_set = split_cases(dataset_dir, val_ratio)
-    transforms = monai_augmentations(image_size)
+    transforms = augmentation_2d(image_size)
     train_ds = GITract(train_set.images, train_set.labels, transforms)
     val_ds = GITract(val_set.images, val_set.labels, transforms)
 
@@ -264,7 +230,7 @@ def train_ensemble():
     t_max = int(30000 / batch_size * epochs) + 50
 
     train_folds, val_folds = kfold_split(dataset_dir / "labels")
-    transforms = monai_augmentations(image_size)
+    transforms = augmentation_2d(image_size)
 
     train_datasets = [GITract(fold.images, fold.labels, transforms) for fold in train_folds]
     val_datasets = [GITract(fold.images, fold.labels, transforms) for fold in val_folds]

@@ -48,12 +48,12 @@ def stack_images(df: pd.DataFrame, case_day: str, images_dir: Path, labels_dir: 
 
     shape = images[0].shape
     image_stack = np.stack(images)
-    image_stack = einops.repeat(image_stack, "b h w -> b c h w", c=3)
+    image_stack = einops.repeat(image_stack, "d h w -> c d h w", c=3)
     masks = [
         generate_mask(df[df["id"] == idx], shape) for idx in ids
     ]
     mask_stack = np.stack(masks)
-    mask_stack = einops.rearrange(mask_stack, "b h w c -> b c h w")
+    mask_stack = einops.rearrange(mask_stack, "d h w c -> c d h w")
 
     np.save(images_dir / f"{case_day}.npy", image_stack)
     np.save(labels_dir / f"{case_day}.npy", mask_stack)

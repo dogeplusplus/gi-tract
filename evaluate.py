@@ -41,8 +41,9 @@ def main():
     images = list(images_dir.rglob("*.npy"))
     labels = [Path(str(p).replace("images", "labels")) for p in images]
 
+    spatial_size = (224, 224)
     preprocessing = transforms.Compose([
-        transforms.Resized(keys=["image", "label"], spatial_size=(224, 224), mode="nearest"),
+        transforms.Resized(keys=["image", "label"], spatial_size=spatial_size, mode="nearest"),
     ])
     dataset = GITract(images, labels, preprocessing)
     batch_size = 32
@@ -54,7 +55,7 @@ def main():
     mean_dice = MeanMetric().to(device)
     miou = MeanMetric().to(device)
     hausdorff = MeanMetric().to(device)
-    max_dist = np.sqrt(224 ** 2 + 224 ** 2)
+    max_dist = np.sqrt(spatial_size[0] ** 2 + spatial_size[1] ** 2)
 
     for xs, ys in tqdm(loader, total=len(loader)):
         xs = xs.to(device)

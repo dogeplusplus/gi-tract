@@ -1,3 +1,4 @@
+import json
 import tqdm
 import torch
 import mlflow
@@ -8,6 +9,7 @@ import torch.nn as nn
 import segmentation_models_pytorch as smp
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW, lr_scheduler, Optimizer
@@ -187,8 +189,18 @@ def main():
     loss_fn = losses[loss_name]
 
     mlflow.log_param("loss_type", loss_name)
-    display_every = 50
 
+    case_split = {
+        "train": train_set.cases,
+        "valid": val_set.cases,
+    }
+    with TemporaryDirectory() as temp_dir:
+        temp_file = Path(temp_dir) / "file.json"
+        with open(temp_file, "w") as f:
+            json.dump(case_split, f)
+        mlflow.log_artifact(temp_file, artifact_path="cases.json")
+
+    display_every = 50
     best_loss = np.inf
 
     for e in range(epochs):

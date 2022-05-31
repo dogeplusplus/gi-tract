@@ -1,5 +1,6 @@
 import torch
 import logging
+import numpy as np
 import torch.nn as nn
 import monai.transforms as transforms
 
@@ -10,7 +11,7 @@ from argparse import ArgumentParser
 from torchmetrics import MeanMetric
 from torch.utils.data import DataLoader
 
-from train import dice_coef, iou_coef
+from utils.metrics import dice_coef, iou_coef, hausdorff_dist
 
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,8 @@ def main():
 
     mean_dice = MeanMetric().to(device)
     miou = MeanMetric().to(device)
+    hausdorff = MeanMetric().to(device)
+    max_dist = np.sqrt(224 ** 2 + 224 ** 2)
 
     for xs, ys in tqdm(loader, total=len(loader)):
         xs = xs.to(device)
@@ -68,12 +71,21 @@ def main():
 
         dice = dice_coef(ys, prediction)
         iou = iou_coef(ys, prediction)
+        # Hausdorff computation seems to run on CPU
+        distance = hausdorff_dist(prediction, ys, max_dist)
 
         mean_dice.update(dice)
         miou.update(iou)
+        hausdorff.update(distance)
 
-    logger.info(f"Mean Dice: {mean_dice.compute().cpu().numpy()}")
-    logger.info(f"Mean IoU: {miou.compute().cpu().numpy()}")
+    mean_dice = mean_dice.compute().cpu().numpy()
+    mean_iou = miou.compute().cpu().numpy()
+    mean_hausdorff = hausdorff.compute().cpu().numpy()
+
+    logger.info(f"Mean Dice: {mean_dice}")
+    logger.info(f"Mean IoU: {mean_iou}")
+    logger.info(f"Hausdorff Distance: {mean_hausdorff}")
+    logger.info(f"Estimated Kaggle Score 0.4 * dice + 0.6 * hausdorff: {0.4 * mean_dice + 0.6 * mean_hausdorff}")
 
 
 if __name__ == "__main__":

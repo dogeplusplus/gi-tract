@@ -74,6 +74,7 @@ class GITract(Dataset):
 class DataPaths:
     images: t.List[Path]
     labels: t.List[Path]
+    cases: t.List[str]
 
 
 def split_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPaths]:
@@ -93,7 +94,7 @@ def split_cases(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPat
     train_labels = [Path(str(p).replace("images", "labels")) for p in train_images]
     val_labels = [Path(str(p).replace("images", "labels")) for p in val_images]
 
-    return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)
+    return DataPaths(train_images, train_labels, train_cases), DataPaths(val_images, val_labels, val_cases)
 
 
 def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPaths]:
@@ -107,7 +108,7 @@ def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPa
     train_labels = [Path(str(p).replace("images", "labels")) for p in train_images]
     val_labels = [Path(str(p).replace("images", "labels")) for p in val_images]
 
-    return DataPaths(train_images, train_labels), DataPaths(val_images, val_labels)
+    return DataPaths(train_images, train_labels, []), DataPaths(val_images, val_labels, [])
 
 
 def augmentation_2d(image_size: t.Tuple[int, int]) -> transforms.Compose:
@@ -163,13 +164,15 @@ def kfold_split(label_dir: Path, folds: int = 5, seed: int = 42) -> t.Tuple[t.Li
     val_datasets = []
     for val_indices, train_indices in splits:
         train_fold = df.iloc[train_indices]
+        train_cases = list(set(train_fold["cases"].tolist()))
         train_label_paths = train_fold["labels"].tolist()
         train_image_paths = [Path(str(p).replace("labels", "images")) for p in train_label_paths]
-        train_datasets.append(DataPaths(train_image_paths, train_label_paths))
+        train_datasets.append(DataPaths(train_image_paths, train_label_paths, train_cases))
 
         val_fold = df.iloc[val_indices]
         val_label_paths = val_fold["labels"].tolist()
         val_image_paths = [Path(str(p).replace("labels", "images")) for p in val_label_paths]
-        val_datasets.append(DataPaths(val_image_paths, val_label_paths))
+        val_cases = list(set(val_fold["cases"].tolist()))
+        val_datasets.append(DataPaths(val_image_paths, val_label_paths, val_cases))
 
     return train_datasets, val_datasets

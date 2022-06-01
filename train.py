@@ -125,7 +125,7 @@ def valid_epoch(model, data_loader, device, epoch, display_every, loss_fn):
 
 
 def main():
-    dataset_dir = Path("dataset")
+    dataset_dir = Path("datasets", "2d")
 
     val_ratio = 0.2
     batch_size = 128
@@ -226,7 +226,7 @@ def main():
 
 
 def train_ensemble():
-    dataset_dir = Path("dataset", "2d")
+    dataset_dir = Path("datasets", "2d")
 
     batch_size = 128
     num_workers = 4
@@ -319,4 +319,4 @@ def train_ensemble():
 
 
 if __name__ == "__main__":
-    train_ensemble()
+    main()

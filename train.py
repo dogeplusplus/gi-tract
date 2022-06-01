@@ -191,8 +191,8 @@ def main():
     mlflow.log_param("loss_type", loss_name)
 
     case_split = {
-        "train": train_set.cases,
-        "valid": val_set.cases,
+        "train": list(train_set.cases),
+        "valid": list(val_set.cases),
     }
     with TemporaryDirectory() as temp_dir:
         temp_file = Path(temp_dir) / "file.json"

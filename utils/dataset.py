@@ -114,16 +114,16 @@ def split_images(input_dir: Path, val_ratio: float) -> t.Tuple[DataPaths, DataPa
 def augmentation_2d(image_size: t.Tuple[int, int]) -> transforms.Compose:
     augmentation = transforms.Compose([
         transforms.Resized(keys=["image", "label"], spatial_size=image_size, mode="nearest"),
-        transforms.RandFlipd(keys=["image", "label"], prob=0.2, spatial_axis=0),
-        transforms.RandRotated(keys=["image", "label"], prob=0.2, range_x=[0.3, 0.3]),
-        transforms.RandBiasFieldd(keys=["image"], degree=3, coeff_range=(0.2, 0.3), prob=0.2),
+        transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+        transforms.RandRotated(keys=["image", "label"], prob=0.5, range_x=[0.15, 0.15]),
+        transforms.RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.5, 4.5)),
         transforms.OneOf([
-            transforms.RandGridDistortiond(keys=["image", "label"], num_cells=5, prob=0.2),
+            transforms.RandGridDistortiond(keys=["image", "label"], num_cells=5, prob=1.0),
             transforms.Rand2DElasticd(
                 keys=["image", "label"],
                 spacing=(20, 20),
                 magnitude_range=(1, 2),
-                prob=0.2,
+                prob=1.0,
             ),
         ], weights=[0.5, 0.5]),
         transforms.RandCoarseDropoutd(
@@ -131,9 +131,8 @@ def augmentation_2d(image_size: t.Tuple[int, int]) -> transforms.Compose:
             holes=8,
             spatial_size=(image_size[0] // 20, image_size[1] // 20),
             fill_value=0,
-            prob=0.3,
+            prob=1.0,
         ),
-        transforms.RandAdjustContrastd(keys=["image"], prob=0.2, gamma=(0.5, 4.5)),
     ])
 
     return augmentation

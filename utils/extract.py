@@ -15,7 +15,8 @@ def parse_segmentation(
     runs = [int(x) for x in rle_segmentation.split()]
 
     for idx in range(0, len(runs), 2):
-        start = runs[idx]
+        # Start index starts from 1 in csv need to correct
+        start = runs[idx] - 1
         length = runs[idx+1]
         flat_mask[start:start+length] = 1
 

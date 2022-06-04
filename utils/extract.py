@@ -25,6 +25,7 @@ def parse_segmentation(
 
 
 def generate_mask(segments: pd.DataFrame, image_size: np.ndarray) -> np.ndarray:
+    segments = segments.sort_values(by="class")
     masks = []
 
     for _, seg in segments.iterrows():

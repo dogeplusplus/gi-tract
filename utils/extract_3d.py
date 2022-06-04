@@ -1,6 +1,4 @@
-from utils.extract import generate_mask
 import cv2
-import sys
 import einops
 import numpy as np
 import typing as t
@@ -10,7 +8,7 @@ from pathlib import Path
 from itertools import repeat
 from multiprocessing import Pool
 
-sys.path.append(".")
+from utils.extract import generate_mask
 
 
 def parse_filepath(path: Path) -> t.Dict[str, t.Any]:

@@ -1,10 +1,7 @@
-import sys
 import torch
 import mlflow
 
 from torchviz import make_dot
-
-sys.path.append(".")
 
 
 def main():

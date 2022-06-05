@@ -76,7 +76,7 @@ def parse_arguments():
 
 
 def main(args):
-    images_path = Path("dataset", "images")
+    images_path = Path("datasets", "2d", "images")
     logged_model = f"runs:/{args.run}/model"
     model = mlflow.pytorch.load_model(logged_model)
     device = "cuda" if torch.cuda.is_available() else "cpu"

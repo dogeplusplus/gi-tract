@@ -36,6 +36,30 @@ def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> 
     return pred
 
 
+def predict_stack(model: nn.Module, images: torch.Tensor, device: str) -> torch.Tensor:
+    # TODO: Make the monai augmentation work
+    images /= images.max()
+    images = images.to(device)
+
+    c, d, h, w = images.shape
+
+    preprocessing = transforms.Compose([
+        transforms.Resize(spatial_size=(d, 224, 224), mode="nearest"),
+
+    ])
+    images = preprocessing(images)
+
+    pred = model(images)
+    pred = nn.Sigmoid()(pred)
+
+    postprocessing = transforms.Compose([
+        transforms.Resize(spatial_size=(d, h, w), mode="nearest"),
+    ])
+    pred = postprocessing(pred)
+
+    return pred
+
+
 def display_predictions(model: nn.Module, num_images: int, images_path: Path, device: str):
     images = list(images_path.rglob("*.npy"))
     image_paths = random.sample(images, num_images)
@@ -83,6 +107,12 @@ def main(args):
     model = model.to(device)
 
     display_predictions(model, args.images, images_path, device)
+
+    images_path = Path("datasets", "3d", "images")
+    random_img = np.load(list(images_path.rglob("*.npy"))[0]).astype(np.float32)
+    random_img /= random_img.max()
+    images = torch.from_numpy(random_img)
+    predict_stack(model, images, device)
 
 
 if __name__ == "__main__":

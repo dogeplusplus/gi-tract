@@ -13,6 +13,22 @@ from torch.utils.data import Dataset, random_split
 from sklearn.model_selection import StratifiedGroupKFold
 
 
+class TensorDataset(Dataset):
+    def __init__(self, images, transforms=None):
+        self.images = images
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+        image = self.images[index]
+        if self.transforms:
+            image = self.transforms(image)
+
+        return image
+
+
 class GITract3D(Dataset):
     def __init__(self, image_stacks: t.List[Path], label_stacks: t.List[Path], transforms=None):
         self.image_stacks = image_stacks

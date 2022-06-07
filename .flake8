@@ -2,3 +2,5 @@
 max-line-length = 120
 exclude =
 	model_instances
+per-file-ignores =
+	*:E402

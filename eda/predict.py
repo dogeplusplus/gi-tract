@@ -1,4 +1,3 @@
-import sys
 import torch
 import random
 import mlflow
@@ -7,14 +6,15 @@ import torch.nn as nn
 import monai.transforms as transforms
 import matplotlib.pyplot as plt
 
-from argparse import ArgumentParser
 from pathlib import Path
 from einops import rearrange, repeat
+from torch.utils.data import DataLoader
+from argparse import ArgumentParser
 
-sys.path.append(".")
+from utils.dataset import TensorDataset
 
 
-def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> torch.Tensor:
+def predict_single_image(model: nn.Module, image: torch.Tensor, device: str, threshold: float = 0.5) -> torch.Tensor:
     shape = image.shape
     preprocessing = transforms.Compose([
         transforms.Resize(spatial_size=(224, 224), mode="nearest"),
@@ -23,11 +23,11 @@ def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> 
     image = repeat(image, "h w -> 3 h w")
     image = preprocessing(image)
     image = rearrange(image, "c h w -> 1 c h w")
-
     image = torch.from_numpy(image).to(device)
+
     pred = model(image)
     pred = nn.Sigmoid()(pred[0])
-    pred = (pred > 0.5).to(torch.float32)
+    pred = (pred > threshold).to(torch.float32)
     pred = pred.cpu().detach().numpy()
     # Take the first non-background class
     pred = transforms.Resize(spatial_size=shape, mode="nearest")(pred)
@@ -36,28 +36,34 @@ def predict_single_image(model: nn.Module, image: torch.Tensor, device: str) -> 
     return pred
 
 
-def predict_stack(model: nn.Module, images: torch.Tensor, device: str) -> torch.Tensor:
-    # TODO: Make the monai augmentation work
+def predict_stack(model: nn.Module, images: torch.Tensor, device: str, threshold: float = 0.5) -> torch.Tensor:
     images /= images.max()
     images = images.to(device)
 
     c, d, h, w = images.shape
+    images = rearrange(images, "c d h w -> d c h w")
 
     preprocessing = transforms.Compose([
-        transforms.Resize(spatial_size=(d, 224, 224), mode="nearest"),
+        transforms.Resize(spatial_size=(224, 224), mode="nearest"),
 
     ])
-    images = preprocessing(images)
-
-    pred = model(images)
-    pred = nn.Sigmoid()(pred)
+    dataset = TensorDataset(images, preprocessing)
+    loader = DataLoader(dataset, batch_size=4, shuffle=False)
 
     postprocessing = transforms.Compose([
-        transforms.Resize(spatial_size=(d, h, w), mode="nearest"),
+        transforms.Resize(spatial_size=(3, h, w), mode="nearest"),
     ])
-    pred = postprocessing(pred)
 
-    return pred
+    predictions = []
+
+    for batch in loader:
+        pred = model(batch)
+        pred = nn.Sigmoid()(pred)
+        pred = postprocessing(pred)
+        pred = (pred > threshold).to(torch.float32)
+        predictions.append(pred)
+
+    return torch.cat(predictions, dim=0)
 
 
 def display_predictions(model: nn.Module, num_images: int, images_path: Path, device: str):
@@ -99,7 +105,7 @@ def parse_arguments():
     return args
 
 
-def main(args):
+def visualise_2d_predictions(args):
     images_path = Path("datasets", "2d", "images")
     logged_model = f"runs:/{args.run}/model"
     model = mlflow.pytorch.load_model(logged_model)
@@ -107,6 +113,13 @@ def main(args):
     model = model.to(device)
 
     display_predictions(model, args.images, images_path, device)
+
+
+def main(args):
+    logged_model = f"runs:/{args.run}/model"
+    model = mlflow.pytorch.load_model(logged_model)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
 
     images_path = Path("datasets", "3d", "images")
     random_img = np.load(list(images_path.rglob("*.npy"))[0]).astype(np.float32)

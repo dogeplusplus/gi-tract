@@ -1,6 +1,7 @@
 import tqdm
 import torch
 import mlflow
+import logging
 import typing as t
 import numpy as np
 import torchmetrics
@@ -15,6 +16,9 @@ from torch.optim import AdamW, lr_scheduler, Optimizer
 from utils.losses import criterion
 from utils.metrics import iou_coef, dice_coef
 from utils.dataset import GITract, split_cases, augmentation_2d, kfold_split
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def train_epoch(
@@ -131,6 +135,13 @@ def main():
     prefetch_factor = 8
     image_size = (224, 224)
     accumulator = max(1, 32 // batch_size)
+    epochs = 30
+    lr = 2e-3
+    weight_decay = 1e-6
+
+    in_dim = 3
+    out_dim = 3
+    t_max = int(30000 / batch_size * epochs) + 50
 
     train_set, val_set = split_cases(dataset_dir, val_ratio)
     transforms = augmentation_2d(image_size)
@@ -156,14 +167,6 @@ def main():
         pin_memory=device == "cuda",
         prefetch_factor=prefetch_factor,
     )
-
-    epochs = 15
-    lr = 2e-3
-    weight_decay = 1e-6
-
-    in_dim = 3
-    out_dim = 3
-    t_max = int(30000 / batch_size * epochs) + 50
 
     model = smp.Unet(
         encoder_name="efficientnet-b1",
@@ -308,6 +311,7 @@ def train_ensemble():
 
                 val_loss = val_metrics["loss"]
                 if val_loss < best_loss:
+                    logger.info("Validation improved. Logging model...")
                     best_loss = val_loss
                     mlflow.pytorch.log_model(model, "model")
 

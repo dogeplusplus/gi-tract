@@ -1,3 +1,3 @@
-# python-template
+# gi-tract
 
-TODO
+GI Tract Segmentation Kaggle Challenge
